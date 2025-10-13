@@ -1,0 +1,16 @@
+accelerate==1.7.0
+addict==2.4.0
+diffusers==0.35.1
+einops==0.8.1
+flash_attn==2.7.4.post1
+loguru==0.7.3
+numpy==1.26.4
+pillow==11.2.1
+psutil==6.0.0
+qwen-vl-utils==0.0.14
+safetensors==0.5.3
+tiktoken==0.11.0
+torch==2.6.0
+torchdiffeq==0.2.5
+torchvision==0.21.0
+transformers==4.53.2

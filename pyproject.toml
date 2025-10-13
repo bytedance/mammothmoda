@@ -1,0 +1,89 @@
+[project]
+name = "mammothmoda"
+version = "2.0.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "accelerate==1.7.0",
+    "addict==2.4.0",
+    "diffusers==0.35.1",
+    "einops==0.8.1",
+    "torch==2.6.0",
+    "loguru==0.7.3",
+    "numpy==1.26.4",
+    "pillow==11.2.1",
+    "psutil==6.0.0",
+    "qwen-vl-utils==0.0.14",
+    "safetensors==0.5.3",
+    "tiktoken==0.11.0",
+    "torchdiffeq==0.2.5",
+    "torchvision==0.21.0",
+    "transformers==4.53.2",
+    "setuptools>=80.9.0",
+    "flash-attn==2.7.4.post1",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]
+
+[tool.pylint]
+max-line-length = 120
+generated-members = ["numpy.*", "torch.*"]  # Avoid E1101 for obj like `torch.Tensor`
+disable = ["all"]
+enable = ["E"]
+
+[tool.ruff]
+line-length = 120
+fix-only = true  # disables reporting on leftover violation.
+namespace-packages = ["tools"]  # just for fun.😄
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN001",
+    "ANN002",
+    "ANN003",
+    "ANN401",  # allow Any as return type.
+    "D",  # Documents related linting are ignored.
+    "COM812",
+    "ERA001",
+    "NPY002",  # allow old random.
+    "N812",  # allow capitalized abbr for import.
+    "PLR0913",
+    "PLW2901",  # it is quite normal to overwrite the loop variable in loop.
+    "RET504",  # allow unnecessary assignment for better readability.
+    "T201",  # allow print for debug interface.
+    "TID252",  # allow relative import.
+    "FA102",  # we only run mammothmoda2 on python>=3.11
+    "S101",  # allow assert
+    "S105",  # allow possible hard code for token setting
+    "S106",  # allow possible hard code for token setting
+    "S107",  # allow possible hard code for token setting
+    "S311",  # allow random package
+]
+fixable = [  # only fix:
+    "I",  #  import order
+    "RUF022",  # __all__ order
+    "UP004",  # inherit from object
+    "F401",  # remove redundant import, could lost some reference sometimes.
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20  # loose McCabe complexity limit from 10.
+
+[tool.ruff.lint.pylint]
+max-branches = 30  # loose branches complexity limit from 15.
+max-statements = 100  # loose statements complexity limit from 50.
+
+[tool.ruff.lint.isort]
+known-third-party = [
+    "wandb"
+]
