@@ -208,10 +208,14 @@ We are grateful to the following open-source projects:
 
 ## Citation
 
+If you find MammothModa2 useful in your research, please cite:
+
 ```bibtex
-@misc{mammothmoda2025,
-    title = {MammothModa2: Jointly Optimized Autoregressive-Diffusion Models for Unified Multimodal Understanding and Generation},
-    author = {MammothModa Team},
-    year = {2025},
-    url = {https://github.com/bytedance/mammothmoda}
+@article{shen2025mammothmoda2,
+    title={MammothModa2: A Unified AR-Diffusion Framework for Multimodal Understanding and Generation},
+    author={Shen, Tao and Wan, Xin and Chen, Taicai and Zhang, Rui and Pan, Junwen and Lu, Dawei and Lei, Fanding and Lu, Zhilin and Yang, Yunfei and Cheng, Chen and She, Qi and Liu, Chang and Sun, Zhenbang},
+    journal={arXiv preprint arXiv:2511.18262},
+    year={2025},
+    url={https://arxiv.org/abs/2511.18262}
 }
+```
