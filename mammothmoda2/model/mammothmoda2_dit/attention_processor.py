@@ -30,24 +30,18 @@ import torch
 import torch.nn.functional as F
 from diffusers.models.attention_processor import Attention
 from einops import repeat
-from transformers.modeling_flash_attention_utils import (
-    flash_attn_varlen_func,
-    is_flash_attn_available,
-    pad_input,
-    unpad_input,
-)
+
 from transformers.utils.import_utils import is_torch_npu_available
+from transformers.modeling_flash_attention_utils import _lazy_imports
+flash_attn_func, flash_attn_varlen_func, pad_input, unpad_input = _lazy_imports("flash_attention_2")
 
 from mammothmoda2.model.mammothmoda2_dit.rope_real import apply_real_rotary_emb
 
-if is_flash_attn_available():
-    if is_torch_npu_available():
-        from transformers.integrations.npu_flash_attention import index_first_axis
-    else:
-        from flash_attn.bert_padding import index_first_axis
+if is_torch_npu_available():
+    from mammothmoda2.model.mammothmoda2_dit.utils import index_first_axis
 else:
-    error_msg = "No legal index_first_axis found. Please install flash-attn."
-    raise ImportError(error_msg)
+    from flash_attn.bert_padding import index_first_axis
+
 
 
 class AttnProcessorFlash2Varlen:
@@ -66,8 +60,6 @@ class AttnProcessorFlash2Varlen:
 
     def __init__(self) -> None:
         """Initialize the attention processor."""
-        if not is_flash_attn_available():
-            raise ImportError("AttnProcessorFlash2Varlen requires flash_attn. Please install flash_attn.")
 
     def _upad_input(
         self,

@@ -17,20 +17,21 @@ from typing import TYPE_CHECKING, ClassVar, Unpack
 
 import numpy as np
 from loguru import logger
+from torchvision import transforms
 from transformers.image_utils import ImageInput
-from transformers.models.qwen2_5_vl.processing_qwen2_5_vl import (
-    Qwen2_5_VLImagesKwargs,
-    Qwen2_5_VLProcessor,
-    Qwen2_5_VLVideosProcessorKwargs,
+from transformers.models.qwen3_vl.processing_qwen3_vl import (
+    Qwen3VLImagesKwargs,
+    Qwen3VLProcessor,
+    Qwen3VLVideosProcessorKwargs,
 )
 from transformers.processing_utils import BatchFeature, PreTokenizedInput, ProcessingKwargs, TextInput
 from transformers.video_utils import VideoInput
 
-from .mammothmoda2_qwen2_5_vl import MammothUTokenizer
+from .mammothmoda2_qwen3_vl import MammothUTokenizer
 
 if TYPE_CHECKING:
     from transformers.models.qwen2_vl import Qwen2VLImageProcessor, Qwen2VLImageProcessorFast
-    from transformers.models.qwen2_vl.video_processing_qwen2_vl import Qwen2VLVideoProcessor
+    from transformers.models.qwen3_vl.video_processing_qwen3_vl import Qwen3VLVideoProcessor
 
 
 DEFAULT_NEGATIVE_PROMPT = (
@@ -40,25 +41,31 @@ DEFAULT_NEGATIVE_PROMPT = (
 )
 
 
-class Mammothmoda2ImagesKwargs(Qwen2_5_VLImagesKwargs):
+num_digits = lambda n: len(str(abs(int(n))))
+
+
+class Mammothmoda2ImagesKwargs(Qwen3VLImagesKwargs):
     negative_prompt: str | None
     num_images_per_prompt: int
     cfg_scale: float
+    t2i_generate: bool
 
 
 class Mammothmoda2ProcessorKwargs(ProcessingKwargs, total=False):
     images_kwargs: Mammothmoda2ImagesKwargs
-    videos_kwargs: Qwen2_5_VLVideosProcessorKwargs
+    videos_kwargs: Qwen3VLVideosProcessorKwargs
     _defaults = {  # noqa: RUF012
         "text_kwargs": {
             "padding": False,
+            "return_token_type_ids": False,
             "return_mm_token_type_ids": False,
         },
+        "videos_kwargs": {"return_metadata": True},
     }
 
 
-class Mammothmoda2Processor(Qwen2_5_VLProcessor):
-    """The mammothmoda2 processor inherit from Qwen2_5_VLProcessor, adding image editing support."""
+class Mammothmoda2Processor(Qwen3VLProcessor):
+    """The mammothmoda2 processor inherit from Qwen3VLProcessor, adding image editing support."""
 
     attributes: ClassVar[list[str]] = ["image_processor", "tokenizer", "video_processor"]
 
@@ -72,25 +79,27 @@ class Mammothmoda2Processor(Qwen2_5_VLProcessor):
         tokenizer: MammothUTokenizer | None = None,
         video_processor=None,
         chat_template=None,
-        t2i_generate: bool = False,
-        ar_height: int = 32,
-        ar_width: int = 32,
+        gen_patch_size: int = 14,
+        gen_image_token: str = "<|gen_placeholder|>",
         **kwargs,  # noqa: ARG002
     ) -> None:
-        super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)
-        self.t2i_generate = t2i_generate
-        self.ar_height = ar_height
-        self.ar_width = ar_width
-        logger.info(f"Mammothmoda2Processor init: {t2i_generate=} | {ar_height=} | {ar_width=}")
+        super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template, **kwargs)
+        self.gen_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ])
+        self.gen_patch_size = gen_patch_size
+        self.gen_image_token = gen_image_token
 
         # Type maker for better IDE type hint.
         self.tokenizer: MammothUTokenizer
         self.image_processor: Qwen2VLImageProcessor | Qwen2VLImageProcessorFast
-        self.video_processor: Qwen2VLVideoProcessor
+        self.video_processor: Qwen3VLVideoProcessor
 
     def __call__(
         self,
         images: ImageInput | None = None,
+        gen_images: ImageInput | None = None,
         text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] | None = None,
         videos: VideoInput | None = None,
         **kwargs: Unpack[Mammothmoda2ProcessorKwargs],
@@ -104,42 +113,55 @@ class Mammothmoda2Processor(Qwen2_5_VLProcessor):
             text = [text]
 
         # Mammothmoda2 pre-processing: inputs expansion.
-        if self.t2i_generate is True:
+        t2i_generate = output_kwargs["images_kwargs"]["t2i_generate"]
+        if t2i_generate is True:
             num_images_per_prompt = output_kwargs["images_kwargs"]["num_images_per_prompt"]
             cfg_scale = output_kwargs["images_kwargs"]["cfg_scale"]
             if num_images_per_prompt > 1:  # NOTE: num_images_per_prompt > 1, we need to repeat the inputs
                 images = images * num_images_per_prompt if images is not None else None
+                gen_images = gen_images * num_images_per_prompt if gen_images is not None else None
                 videos = videos * num_images_per_prompt if videos is not None else None
                 text = text * num_images_per_prompt
             if cfg_scale > 1.0:  # NOTE: cfg_scale > 1.0, we need to repeat the inputs
                 images = images * 2 if images is not None else None
+                gen_images = gen_images * 2 if gen_images is not None else None
                 videos = videos * 2 if videos is not None else None
                 text = text * 2
 
-        # Original Qwen2_5_VLProcessor logic.
-        image_inputs = videos_inputs = {}
         if images is not None:
             image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
             image_grid_thw = image_inputs["image_grid_thw"]
+        else:
+            image_inputs = {}
+            image_grid_thw = None
+        
+        if gen_images is not None:
+            gen_image_inputs = [self.gen_transform(img).unsqueeze(0) for img in gen_images]
+            h_patchs = [img.shape[2] // self.gen_patch_size for img in gen_image_inputs]
+            w_patchs = [img.shape[3] // self.gen_patch_size for img in gen_image_inputs]
+            gen_image_token_nums = [
+                h_patch * (w_patch + 1) + 5 + num_digits(h_patch) + num_digits(w_patch)
+                for h_patch, w_patch in zip(h_patchs, w_patchs)
+            ]
+        else:
+            gen_image_inputs = None
+            gen_image_token_nums = None
+
         if videos is not None:
-            fps = output_kwargs["videos_kwargs"].get("fps", 2.0)
             videos_inputs = self.video_processor(videos=videos, **output_kwargs["videos_kwargs"])
             video_grid_thw = videos_inputs["video_grid_thw"]
-
-            if isinstance(fps, (int, float)):
-                second_per_grid_ts = [self.video_processor.temporal_patch_size / fps] * len(video_grid_thw)
-            elif hasattr(fps, "__len__") and len(fps) == len(video_grid_thw):
-                second_per_grid_ts = [self.video_processor.temporal_patch_size / tmp for tmp in fps]
+            # If user has not requested video metadata, pop it
+            if "return_metadata" not in kwargs:
+                video_metadata = videos_inputs.pop("video_metadata")
             else:
-                error_msg = (
-                    f"The length of fps ({len(fps) if hasattr(fps, '__len__') else fps}) must be equal to the "
-                    f"length of video_grid_thw ({len(video_grid_thw)}) or fps should be a single number."
-                )
-                raise ValueError(error_msg)
-            videos_inputs.update({"second_per_grid_ts": second_per_grid_ts})
+                video_metadata = videos_inputs["video_metadata"]
+            video_grid_thw = videos_inputs["video_grid_thw"]
+        else:
+            videos_inputs = {}
+            video_grid_thw = None
 
         text = text.copy()  # below lines change text in-place
-        if images is not None:
+        if image_grid_thw is not None:
             merge_length = self.image_processor.merge_size**2
             index = 0
             for i in range(len(text)):
@@ -149,14 +171,54 @@ class Mammothmoda2Processor(Qwen2_5_VLProcessor):
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.image_token)
 
-        if videos is not None:
+        if gen_image_token_nums is not None:
+            assert "".join(text).count(self.gen_image_token) == len(gen_image_token_nums), "gen_image_token_nums is not consistent with gen_image in text"
+            index = 0
+            for i in range(len(text)):
+                while self.gen_image_token in text[i]:
+                    num_gen_image_tokens = gen_image_token_nums[index]
+                    text[i] = text[i].replace(self.gen_image_token, "<|placeholder|>" * num_gen_image_tokens, 1)
+                    index += 1
+                text[i] = text[i].replace("<|placeholder|>", self.gen_image_token)
+
+        if video_grid_thw is not None:
             merge_length = self.video_processor.merge_size**2
             index = 0
             for i in range(len(text)):
                 while self.video_token in text[i]:
-                    num_video_tokens = video_grid_thw[index].prod() // merge_length
-                    text[i] = text[i].replace(self.video_token, "<|placeholder|>" * num_video_tokens, 1)
+                    metadata = video_metadata[index]
+                    if metadata.fps is None:
+                        logger.warning_once(
+                            "Qwen3VL requires frame timestamps to construct prompts, but the `fps` of the input video could not be inferred. "
+                            "Probably `video_metadata` was missing from inputs and you passed pre-sampled frames. "
+                            "Defaulting to `fps=24`. Please provide `video_metadata` for more accurate results."
+                        )
+                        metadata.fps = 24 if metadata.fps is None else metadata.fps
+
+                    # if timestamps are not provided, calculate them
+                    curr_timestamp = self._calculate_timestamps(
+                        metadata.frames_indices,
+                        metadata.fps,
+                        self.video_processor.merge_size,
+                    )
+
+                    video_placeholder = ""
+                    frame_seqlen = video_grid_thw[index][1:].prod() // merge_length
+                    for frame_idx in range(video_grid_thw[index][0]):
+                        curr_time = curr_timestamp[frame_idx]
+                        video_placeholder += f"<{curr_time:.1f} seconds>"
+                        video_placeholder += (
+                            self.vision_start_token + "<|placeholder|>" * frame_seqlen + self.vision_end_token
+                        )
+                    if f"{self.vision_start_token}{self.video_token}{self.vision_end_token}" in text[i]:
+                        text[i] = text[i].replace(
+                            f"{self.vision_start_token}{self.video_token}{self.vision_end_token}", video_placeholder, 1
+                        )
+                    else:
+                        # vllm may input video token directly
+                        text[i] = text[i].replace(self.video_token, video_placeholder, 1)
                     index += 1
+
                 text[i] = text[i].replace("<|placeholder|>", self.video_token)
 
         return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
@@ -173,7 +235,8 @@ class Mammothmoda2Processor(Qwen2_5_VLProcessor):
         inputs = BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs}, tensor_type=return_tensors)
 
         # Mammothmoda2 t2i post-processing: attaching negative prompt.
-        if self.t2i_generate is True:
+        if t2i_generate is True:
+            inputs["gen_pixel_values"] = gen_image_inputs
             negative_ids, negative_mask = None, None
             if (negative_prompt := output_kwargs["images_kwargs"].get("negative_prompt", None)) is not None:
                 negative_messages = [
@@ -195,9 +258,17 @@ class Mammothmoda2Processor(Qwen2_5_VLProcessor):
                 inputs["negative_mask"] = negative_mask
         return inputs
 
-    def apply_chat_template(self, *args, **kwargs) -> str:
-        if self.t2i_generate is True:  # For t2i, use different chat template.
-            kwargs["t2i_generate"] = self.t2i_generate
-            kwargs["ar_height"] = self.ar_height
-            kwargs["ar_width"] = self.ar_width
-        return super().apply_chat_template(*args, **kwargs)
+    def apply_chat_template(
+        self,
+        conversation: list[dict[str, str]] | list[list[dict[str, str]]],
+        *args,
+        t2i_generate: bool = False,
+        ar_height: int = 16,
+        ar_width: int = 16,
+        **kwargs
+    ) -> str:
+        if t2i_generate is True:  # For t2i, use different chat template.
+            kwargs["t2i_generate"] = t2i_generate
+            kwargs["ar_height"] = ar_height
+            kwargs["ar_width"] = ar_width
+        return super().apply_chat_template(conversation, *args, **kwargs)

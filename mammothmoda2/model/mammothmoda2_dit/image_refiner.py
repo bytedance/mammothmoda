@@ -21,7 +21,7 @@ from transformers.modeling_flash_attention_utils import (
     is_torch_npu_available,
 )
 
-from ..mammothmoda2_qwen2_5_vl.modeling_mammothmoda2_qwen2_5_vl import Qwen2RMSNorm
+from ..mammothmoda2_qwen3_vl.modeling_mammothmoda2_qwen3_vl import Qwen3VLTextRMSNorm
 
 
 def _swiglu(x, y):
@@ -85,10 +85,11 @@ class LuminaFeedForward(nn.Module):
         return self.linear_2(self.swiglu(h1, h2))
 
 
-class SimpleQFormerImageRefiner(nn.Module):
+class SimpleQFormerImageEmbedder(nn.Module):
     """
     A lightweight Q-Former-like module that maps a variable-length sequence of
     input features to a fixed number of query tokens (default 128).
+
     Inputs are first projected to `hidden_size`, then a stack of decoder blocks
     performs self-attention over learnable queries and cross-attention to inputs.
     Output shape: (batch, num_queries, hidden_size)
@@ -96,6 +97,7 @@ class SimpleQFormerImageRefiner(nn.Module):
 
     def __init__(
         self,
+        input_dim: int,
         hidden_size: int,
         num_queries: int = 128,
         num_layers: int = 2,
@@ -104,6 +106,8 @@ class SimpleQFormerImageRefiner(nn.Module):
         norm_eps: float = 1e-5,
     ) -> None:
         super().__init__()
+
+        self.input_dim = input_dim
         self.hidden_size = hidden_size
         self.num_queries = num_queries
         # ensure num_heads divides hidden_size
@@ -111,8 +115,8 @@ class SimpleQFormerImageRefiner(nn.Module):
             num_heads = max(1, hidden_size // 128)
         self.num_heads = self._choose_valid_num_heads(hidden_size, num_heads)
         self.input_proj = nn.Sequential(
-            Qwen2RMSNorm(hidden_size, eps=norm_eps),
-            nn.Linear(hidden_size, hidden_size, bias=True),
+            Qwen3VLTextRMSNorm(input_dim, eps=norm_eps),
+            nn.Linear(input_dim, hidden_size, bias=True),
         )
 
         # Learnable query embeddings
@@ -125,15 +129,15 @@ class SimpleQFormerImageRefiner(nn.Module):
             self.layers.append(
                 nn.ModuleDict(
                     dict(
-                        ln_q1=Qwen2RMSNorm(hidden_size, eps=norm_eps),
+                        ln_q1=Qwen3VLTextRMSNorm(hidden_size, eps=norm_eps),
                         self_attn=nn.MultiheadAttention(
                             embed_dim=hidden_size, num_heads=self.num_heads, dropout=dropout, batch_first=True
                         ),
-                        ln_q2=Qwen2RMSNorm(hidden_size, eps=norm_eps),
+                        ln_q2=Qwen3VLTextRMSNorm(hidden_size, eps=norm_eps),
                         cross_attn=nn.MultiheadAttention(
                             embed_dim=hidden_size, num_heads=self.num_heads, dropout=dropout, batch_first=True
                         ),
-                        ln_ffn=Qwen2RMSNorm(hidden_size, eps=norm_eps),
+                        ln_ffn=Qwen3VLTextRMSNorm(hidden_size, eps=norm_eps),
                         ffn=LuminaFeedForward(dim=hidden_size, inner_dim=4 * hidden_size),
                     )
                 )
@@ -173,7 +177,7 @@ class SimpleQFormerImageRefiner(nn.Module):
 
             # Cross-attention: queries attend to inputs
             q_norm = layer["ln_q2"](q)
-            cross_out, _ = layer["cross_attn"](q_norm, kv, kv, need_weights=False, key_padding_mask=attention_mask)
+            cross_out, _ = layer["cross_attn"](q_norm, kv, kv, need_weights=False, key_padding_mask=~attention_mask.bool())
             q = q + cross_out
 
             # Feed-forward

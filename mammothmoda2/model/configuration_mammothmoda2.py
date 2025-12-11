@@ -36,7 +36,8 @@ class Mammothmoda2Config(PretrainedConfig):
         llm_config: dict | None = None,
         gen_vae_config: dict | None = None,
         gen_dit_config: dict | None = None,
-        gen_condition_mode: Literal["text", "image", "text_image"] = "image",
+        gen_condition_mode: Literal["text", "image", "text_image"] = "text_image",
+        gen_condition_layers: list[int] | None = None,
         gen_image_condition_refiner_config: dict | None = None,
         gen_axes_dim_rope: list[int] | None = None,
         gen_axes_lens: list[int] | None = None,
@@ -61,6 +62,7 @@ class Mammothmoda2Config(PretrainedConfig):
         self.gen_dit_config = gen_dit_config
 
         self.gen_condition_mode = gen_condition_mode
+        self.gen_condition_layers = gen_condition_layers or [-2, -5, -8, -11, -14, -17]
         self.gen_image_condition_refiner_config = gen_image_condition_refiner_config
         self.gen_axes_dim_rope = gen_axes_dim_rope or [40, 40, 40]
         self.gen_axes_lens = gen_axes_lens or [10000, 10000, 10000]

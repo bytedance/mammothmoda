@@ -34,15 +34,16 @@ from mammothmoda2.utils import ClassifierFreeGuidanceLogitsProcessor, SampledSco
 from .configuration_mammothmoda2 import Mammothmoda2Config
 from .mammothmoda2_dit import (
     RotaryPosEmbedReal,
-    SimpleQFormerImageRefiner,
+    SimpleQFormerImageEmbedder,
     Transformer2DModel,
     create_transport,
 )
-from .mammothmoda2_qwen2_5_vl.modeling_mammothmoda2_qwen2_5_vl import (
-    Mammothmoda2Qwen2_5_VLCausalLMOutputWithPast,
-    Mammothmoda2Qwen2_5_VLForConditionalGeneration,
-    Qwen2RMSNorm,
+from .mammothmoda2_qwen3_vl.modeling_mammothmoda2_qwen3_vl import (
+    Mammothmoda2Qwen3VLCausalLMOutputWithPast,
+    Mammothmoda2Qwen3VLForConditionalGeneration,
+    Qwen3VLTextRMSNorm,
 )
+from .mammothmoda2_visual_tokenizers import get_mammothmoda2_visual_tokenizer, create_image_prompt_batch
 
 if TYPE_CHECKING:
     from transformers.generation.utils import GenerateOutput
@@ -120,12 +121,14 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
         logger.info(f"=> Mammothmoda2Model config: {self.config}")
 
         # MLLM initialization
-        self.llm_model = Mammothmoda2Qwen2_5_VLForConditionalGeneration._from_config(config=self.config.llm_config)  # noqa: SLF001
+        self.llm_model = Mammothmoda2Qwen3VLForConditionalGeneration._from_config(config=self.config.llm_config)  # noqa: SLF001
+        self.gen_tokenizer = get_mammothmoda2_visual_tokenizer("mammothtok_aimv2_512")
 
         # DiT initialization.
         self.gen_vae = AutoencoderKL.from_config(self.config.gen_vae_config)
         self.gen_transformer = Transformer2DModel.from_config(self.config.gen_dit_config)
-        self.reinit_caption_embedder(self.llm_model.config.hidden_size)
+        self.reinit_caption_embedder(self.llm_model.config.text_config.hidden_size)
+        self.reinit_image_embedder(config.gen_image_condition_refiner_config)
         self.gen_freqs_cis = RotaryPosEmbedReal.get_freqs_real(
             config.gen_axes_dim_rope,
             config.gen_axes_lens,
@@ -136,10 +139,6 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
             prediction="velocity",
             **config.gen_transport_config,
         )
-        if config.gen_image_condition_refiner_config is not None:
-            self.gen_image_condition_refiner = SimpleQFormerImageRefiner(
-                hidden_size=self.llm_model.config.hidden_size, **config.gen_image_condition_refiner_config
-            )
 
         # Regular PreTrainedModel post init, without which the weight init and tp_plan init will not be executed.
         self.post_init()
@@ -176,8 +175,6 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
 
     def encode_vae(self, img: torch.Tensor) -> torch.Tensor:
         """Encode images using VAE."""
-        if self.gen_vae.device != img.device:
-            self.gen_vae = self.gen_vae.to(img.device)
         with torch.inference_mode():
             vae_output = self.gen_vae.encode(img)
             # Handle different VAE output formats
@@ -205,12 +202,54 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
         logger.info("Reinitializing caption_embedder")
         out_features = self.gen_transformer.hidden_size
         self.gen_transformer.time_caption_embed.caption_embedder = nn.Sequential(
-            Qwen2RMSNorm(in_features, eps=1e-05),
+            Qwen3VLTextRMSNorm(in_features, eps=1e-05),
             nn.Linear(in_features, out_features, bias=True),
         )
         # Initialize caption_embedder weights
         nn.init.trunc_normal_(self.gen_transformer.time_caption_embed.caption_embedder[1].weight, std=0.02)
         nn.init.zeros_(self.gen_transformer.time_caption_embed.caption_embedder[1].bias)
+    
+    def reinit_image_embedder(self, config: dict) -> None:
+        """Reinitialize image_embedder to adapt to Qwen2.5-VL."""
+        logger.info("Reinitializing image_embedder")
+        self.gen_transformer.time_caption_embed.is_image_embedder = True
+        self.gen_transformer.time_caption_embed.image_embedder = SimpleQFormerImageEmbedder(
+            input_dim=self.llm_model.config.text_config.hidden_size,
+            hidden_size=self.gen_transformer.hidden_size,
+            num_heads=max(1, self.gen_transformer.hidden_size // 128),
+            **config,
+        )
+    
+    @torch.inference_mode()
+    def image_generate_preprocess(
+        self,
+        input_ids: torch.LongTensor,
+        gen_pixel_values: list[torch.Tensor],
+        tokenizer,
+    ):
+        # Anyres mode, this fork base on `gen_image_anyres` in processor_mammothmoda2_vl.py
+        gen_token_ids = []
+        for i, pix in enumerate(gen_pixel_values):
+            gen_tokens = self.gen_tokenizer(pix)
+            gen_tokens_str_list, hw_list = create_image_prompt_batch(
+                gen_tokens,
+                tokenizer,
+                mode="global",
+                imgstr_mode="split_row",
+                return_hw=True,
+            )
+            gen_token_ids.append(tokenizer(gen_tokens_str_list, return_tensors="pt").input_ids.squeeze(0))
+        gen_token_ids = torch.cat(gen_token_ids, dim=0).to(input_ids.device)  # (L_all,)
+
+        n_gen_token_0 = gen_token_ids.numel()
+        n_gen_token_1 = (input_ids == tokenizer.gen_placeholder_id).sum()
+        if n_gen_token_0 != n_gen_token_1:
+            raise ValueError(
+                f"Gen token nums in tokenizer and input_ids do not match: tokenizer: {n_gen_token_0}, input_ids: {n_gen_token_1}"
+            )
+        mask = input_ids == tokenizer.gen_placeholder_id
+        input_ids = input_ids.masked_scatter(mask, gen_token_ids)
+        return input_ids
 
     def forward(
         self,
@@ -219,7 +258,7 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
         inputs_embeds: torch.FloatTensor | None = None,
         labels: torch.LongTensor | None = None,
         **kwargs,
-    ) -> "tuple | Mammothmoda2Qwen2_5_VLCausalLMOutputWithPast":
+    ) -> "tuple | Mammothmoda2Qwen3VLCausalLMOutputWithPast":
         """Part of Mammothmoda2 model forward, which is actually useless for pure generate."""
         return self.llm_model(
             input_ids=input_ids,
@@ -241,9 +280,11 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
         self,
         input_ids: torch.LongTensor | None = None,
         attention_mask: torch.Tensor | None = None,
+        gen_pixel_values: torch.FloatTensor | None = None,
+        tokenizer = None,
         generation_config: GenerationConfig | None = None,
-        ar_height: int = 32,
-        ar_width: int = 32,
+        ar_height: int = 16,
+        ar_width: int = 16,
         cfg_scale: float = 6.0,
         **kwargs,
     ) -> None:
@@ -252,6 +293,14 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
         scope_end = scope_start + generation_config.visual_token_end_id
         B, L = input_ids.shape
         cfg_enable = cfg_scale > 1.0
+
+        if gen_pixel_values is not None:
+            assert self.gen_tokenizer is not None, "gen_tokenizer is not initialized"
+            input_ids = self.image_generate_preprocess(
+                input_ids=input_ids,
+                gen_pixel_values=gen_pixel_values,
+                tokenizer=tokenizer,
+            )
 
         logits_processor = LogitsProcessorList()
         if cfg_enable:

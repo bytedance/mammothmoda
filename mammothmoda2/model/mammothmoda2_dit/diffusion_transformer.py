@@ -40,7 +40,7 @@ from einops import rearrange
 from loguru import logger
 from torch import nn
 
-from mammothmoda2.model.mammothmoda2_qwen2_5_vl.modeling_mammothmoda2_qwen2_5_vl import Qwen2RMSNorm
+from mammothmoda2.model.mammothmoda2_qwen3_vl.modeling_mammothmoda2_qwen3_vl import Qwen3VLTextRMSNorm
 
 from .attention_processor import AttnProcessor, AttnProcessorFlash2Varlen
 from .block_lumina2 import (
@@ -63,7 +63,7 @@ def replace_rmsnorm_with_custom(module):
             if normalized_shape is None and hasattr(child, "weight"):
                 normalized_shape = child.weight.shape
 
-            new_norm = Qwen2RMSNorm(normalized_shape, eps=eps)
+            new_norm = Qwen3VLTextRMSNorm(normalized_shape, eps=eps)
             # Copy weights and biases if they exist
             if hasattr(child, "weight") and hasattr(new_norm, "weight"):
                 new_norm.weight.data.copy_(child.weight.data)
@@ -140,11 +140,11 @@ class TransformerBlock(nn.Module):
         if modulation:
             self.norm1 = LuminaRMSNormZero(embedding_dim=dim, norm_eps=norm_eps, norm_elementwise_affine=True)
         else:
-            self.norm1 = Qwen2RMSNorm(dim, eps=norm_eps)
+            self.norm1 = Qwen3VLTextRMSNorm(dim, eps=norm_eps)
 
-        self.ffn_norm1 = Qwen2RMSNorm(dim, eps=norm_eps)
-        self.norm2 = Qwen2RMSNorm(dim, eps=norm_eps)
-        self.ffn_norm2 = Qwen2RMSNorm(dim, eps=norm_eps)
+        self.ffn_norm1 = Qwen3VLTextRMSNorm(dim, eps=norm_eps)
+        self.norm2 = Qwen3VLTextRMSNorm(dim, eps=norm_eps)
+        self.ffn_norm2 = Qwen3VLTextRMSNorm(dim, eps=norm_eps)
 
         self.initialize_weights()
         replace_rmsnorm_with_custom(self)
@@ -268,6 +268,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginal
         axes_lens: tuple[int, int, int] = (300, 512, 512),
         text_feat_dim: int = 1024,
         timestep_scale: float = 1.0,
+        is_image_embedder: bool = False,
     ) -> None:
         """Initialize the  transformer model."""
         super().__init__()
@@ -304,6 +305,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginal
             text_feat_dim=text_feat_dim,
             norm_eps=norm_eps,
             timestep_scale=timestep_scale,
+            is_image_embedder=is_image_embedder,
         )
 
         # Initialize transformer blocks
@@ -591,6 +593,8 @@ class Transformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginal
         ref_image_hidden_states: list[list[torch.Tensor]] | None = None,
         attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = False,
+        ar_image_hidden_states: list[list[torch.Tensor]] | None = None,
+        ar_image_attention_mask: list[list[torch.Tensor]] | None = None,
     ) -> torch.Tensor | Transformer2DModelOutput:
         if attention_kwargs is not None:
             attention_kwargs = attention_kwargs.copy()
@@ -615,9 +619,23 @@ class Transformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginal
 
         device = hidden_states[0].device
 
-        temb, text_hidden_states = self.time_caption_embed(
-            timestep, text_hidden_states, hidden_states[0].dtype
+        temb, text_hidden_states, ar_image_hidden_states = self.time_caption_embed(
+            timestep=timestep,
+            text_hidden_states=text_hidden_states,
+            ar_image_hidden_states=ar_image_hidden_states,
+            ar_image_attention_mask=ar_image_attention_mask,
+            dtype=hidden_states[0].dtype
         )
+
+        if ar_image_hidden_states is not None:
+            qformer_len = ar_image_hidden_states.shape[1]
+            ar_image_attention_mask = torch.ones(
+                text_hidden_states.shape[0], qformer_len, dtype=torch.bool, device=device
+            )
+
+        if ar_image_attention_mask is not None and ar_image_hidden_states is not None:
+            text_hidden_states = torch.cat([text_hidden_states, ar_image_hidden_states], dim=1)
+            text_attention_mask = torch.cat([text_attention_mask, ar_image_attention_mask], dim=1)
 
         (
             hidden_states,

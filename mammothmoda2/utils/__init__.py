@@ -16,3 +16,4 @@ from .logits_processor import *  # noqa: F403
 from .misc import *  # noqa: F403
 from .t2i_utils import *  # noqa: F403
 from .vae_processor import *  # noqa: F403
+from .vision_processor import process_vision_info, extract_ref_image

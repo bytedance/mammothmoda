@@ -13,29 +13,29 @@
 # limitations under the License.
 
 
-"""Init mammothmoda_qwen2 model."""
+"""Init mammothmoda_qwen3_vl model."""
 
 from transformers import AutoConfig, AutoModelForVision2Seq, AutoTokenizer
 
-from .configuration_mammothmoda2_qwen2_5_vl import Mammothmoda2Qwen2_5_VLConfig
-from .modeling_mammothmoda2_qwen2_5_vl import (
-    Mammothmoda2Qwen2_5_VLCausalLMOutputWithPast,
-    Mammothmoda2Qwen2_5_VLForConditionalGeneration,
+from .configuration_mammothmoda2_qwen3_vl import Mammothmoda2Qwen3VLConfig
+from .modeling_mammothmoda2_qwen3_vl import (
+    Mammothmoda2Qwen3VLCausalLMOutputWithPast,
+    Mammothmoda2Qwen3VLForConditionalGeneration,
 )
-from .tokenization_mammothmoda2_qwen2_5_vl import MammothUTokenizer
+from .tokenization_mammothmoda2_qwen3_vl import MammothUTokenizer
 
 # Huggingface AutoClass register.
-AutoConfig.register(Mammothmoda2Qwen2_5_VLConfig.model_type, Mammothmoda2Qwen2_5_VLConfig)
-AutoModelForVision2Seq.register(Mammothmoda2Qwen2_5_VLConfig, Mammothmoda2Qwen2_5_VLForConditionalGeneration)
+AutoConfig.register(Mammothmoda2Qwen3VLConfig.model_type, Mammothmoda2Qwen3VLConfig)
+AutoModelForVision2Seq.register(Mammothmoda2Qwen3VLConfig, Mammothmoda2Qwen3VLForConditionalGeneration)
 AutoTokenizer.register(
-    config_class=Mammothmoda2Qwen2_5_VLConfig,
+    config_class=Mammothmoda2Qwen3VLConfig,
     slow_tokenizer_class=MammothUTokenizer,
 )
 
 
 __all__ = [
     "MammothUTokenizer",
-    "Mammothmoda2Qwen2_5_VLCausalLMOutputWithPast",
-    "Mammothmoda2Qwen2_5_VLConfig",
-    "Mammothmoda2Qwen2_5_VLForConditionalGeneration",
+    "Mammothmoda2Qwen3VLCausalLMOutputWithPast",
+    "Mammothmoda2Qwen3VLConfig",
+    "Mammothmoda2Qwen3VLForConditionalGeneration",
 ]

@@ -34,7 +34,7 @@ from transformers.modeling_flash_attention_utils import (
     is_torch_npu_available,
 )
 
-from mammothmoda2.model.mammothmoda2_qwen2_5_vl.modeling_mammothmoda2_qwen2_5_vl import Qwen2RMSNorm
+from mammothmoda2.model.mammothmoda2_qwen3_vl.modeling_mammothmoda2_qwen3_vl import Qwen3VLTextRMSNorm
 
 from .embeddings import TimestepEmbedding
 
@@ -71,7 +71,7 @@ class LuminaRMSNormZero(nn.Module):
             bias=True,
         )
 
-        self.norm = Qwen2RMSNorm(embedding_dim, eps=norm_eps)
+        self.norm = Qwen3VLTextRMSNorm(embedding_dim, eps=norm_eps)
 
     def forward(
         self,
@@ -109,7 +109,7 @@ class LuminaLayerNormContinuous(nn.Module):
         if norm_type == "layer_norm":
             self.norm = nn.LayerNorm(embedding_dim, eps, elementwise_affine, bias)
         elif norm_type == "rms_norm":
-            self.norm = Qwen2RMSNorm(embedding_dim, eps=eps, elementwise_affine=elementwise_affine)
+            self.norm = Qwen3VLTextRMSNorm(embedding_dim, eps=eps, elementwise_affine=elementwise_affine)
         else:
             raise ValueError(f"unknown norm_type {norm_type}")
 
@@ -191,6 +191,7 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
         frequency_embedding_size: int = 256,
         norm_eps: float = 1e-5,
         timestep_scale: float = 1.0,
+        is_image_embedder: bool = True,
     ) -> None:
         super().__init__()
 
@@ -203,9 +204,24 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
         )
 
         self.caption_embedder = nn.Sequential(
-            Qwen2RMSNorm(text_feat_dim, eps=norm_eps),
+            Qwen3VLTextRMSNorm(text_feat_dim, eps=norm_eps),
             nn.Linear(text_feat_dim, hidden_size, bias=True),
         )
+
+        self.is_image_embedder = is_image_embedder
+        if self.is_image_embedder:
+            # Q-Former style mapper: variable-length inputs -> fixed 128 query tokens
+            from .image_refiner import SimpleQFormerImageEmbedder
+
+            self.image_embedder = SimpleQFormerImageEmbedder(
+                input_dim=text_feat_dim,
+                hidden_size=hidden_size,
+                num_queries=128,
+                num_layers=2,
+                num_heads=max(1, hidden_size // 128),
+                dropout=0.0,
+                norm_eps=norm_eps,
+            )
 
         self._initialize_weights()
 
@@ -218,8 +234,16 @@ class Lumina2CombinedTimestepCaptionEmbedding(nn.Module):
         timestep: torch.Tensor,
         text_hidden_states: torch.Tensor,
         dtype: torch.dtype,
+        ar_image_hidden_states: torch.Tensor | None = None,
+        ar_image_attention_mask: torch.Tensor | None = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         timestep_proj = self.time_proj(timestep).to(dtype=dtype)
         time_embed = self.timestep_embedder(timestep_proj)
         caption_embed = self.caption_embedder(text_hidden_states)
-        return time_embed, caption_embed
+
+        if self.is_image_embedder and ar_image_hidden_states is not None:
+            ar_image_embed = self.image_embedder(ar_image_hidden_states, ar_image_attention_mask)
+        else:
+            ar_image_embed = None
+
+        return time_embed, caption_embed, ar_image_embed

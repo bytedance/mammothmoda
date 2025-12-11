@@ -71,12 +71,18 @@ QWEN_SPECIAL_TOKENS = (
     "<|fim_pad|>",
     "<|repo_name|>",
     "<|file_sep|>",
+    "<tool_response>",
+    "</tool_response>",
+    "<think>",
+    "</think>",
 )
 
 # align to qwen2.5 tokenizer length (151846)
 EXTRAS = [f"<|extra_{i}|>" for i in range(181)]  # 205 - 19[len(QWEN_SPECIAL_TOKENS)] - 5
 # align to qwen2.5 embedding size (152064)
-EXTRAS += [f"<|extra_margin_{i}|>" for i in range(152064 - 151846)]
+EXTRAS += [
+    f"<|extra_margin_{i}|>" for i in range(152064 - 151846 - 4)
+]  # because we have 4 extra tokens [tool_response, think]
 # append new token in gen embedding range
 EXTRAS += ["<|endofline|>", "<|endoffile|>", "<|gen_placeholder|>", "<|useless token|>", "<|beginoftext|>"]
 EXTRAS = tuple(EXTRAS)
@@ -161,7 +167,7 @@ class MammothUTokenizer(PreTrainedTokenizer):
         self.eoi_token = eoi_token
         self.eol_token = eol_token
         self.eof_token = eof_token
-        self.image_content_token = "<|image_pad|>"  # come from Qwen2.5-VL
+        self.image_content_token = "<|image_pad|>"  # come from Qwen3-VL
         self.gen_image_token = "<|gen_image_pad|>"
         self.gen_image_placeholder_token = "<|gen_placeholder|>"
         self.visual_tokens = ["<|image_pad|>", "<|video_pad|>", "<|vision_start|>", "<|vision_end|>"]

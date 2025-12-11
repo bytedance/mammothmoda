@@ -1,19 +1,28 @@
 <div align="center">
 
 
-# MammothModa2: Jointly Optimized Autoregressive-Diffusion Models for Unified Multimodal Understanding and Generation
+# MammothModa2: A Unified AR-Diffusion Framework for Multimodal Understanding and Generation
 <img src='./doc/logo.png' alt="MammothModa Logo" width="100" style="max-width: 100px; height: auto;">
 
 [![GitHub](https://img.shields.io/badge/MammothModa2-GitHub-blue)](https://github.com/bytedance/mammothmoda)
 [![Project Page](https://img.shields.io/badge/MammothModa2-Project_Page-green)](https://ali-vilab.github.io/MammothModa-Page/)
 [![HuggingFace](https://img.shields.io/badge/MammothModa2-HuggingFace_Model-yellow)](https://huggingface.co/bytedance-research/MammothModa2-Preview)
+[![Report](https://img.shields.io/badge/MammothModa2-arXiv-red)](https://arxiv.org/abs/2511.18262)
 
 </div>
 
 
 ## Introduction
 
-MammothModa2 is a unified Autoregressive-Diffusion (AR-Diffusion) framework designed for comprehensive multimodal understanding and generation. The model adopts a novel serial architecture: the AR backbone utilizes MammothTok—a unified, language-aligned visual tokenizer—to execute complex semantic planning, which then conditions a high-fidelity Diffusion Decoder. Our core technical contribution is a unified joint training strategy, pioneering the simultaneous optimization of the discrete Next-Token Prediction (NTP) loss and the continuous Flow Matching loss within a serial AR-Diffusion system. This end-to-end alignment between the planning and generation spaces enables MammothModa to achieve competitive performance across complex text-to-image generation, editing, and visual understanding benchmarks.
+MammothModa2 (Mammoth2) is a unified autoregressive-diffusion (AR-Diffusion) framework that seamlessly integrates multimodal understanding and generation within a single model. Mammoth2 effectively couples autoregressive semantic planning with diffusion-based generation, enabling high-quality text-to-image generation, instruction-based editing, and comprehensive multimodal understanding.
+
+**Key Features:**
+- **Serial AR-Diffusion Architecture**: An AR path performs global semantic modeling over discrete tokens, while a single-stream Diffusion Transformer (DiT) decoder handles high-fidelity image synthesis
+- **Unified Joint Training**: End-to-end training with joint Next-Token Prediction and Flow Matching objectives, followed by supervised fine-tuning and reinforcement learning
+- **Feature Alignment Module**: A carefully designed AR-Diffusion feature alignment module combines multi-layer feature aggregation, unified condition encoding, and in-context conditioning to stably align AR's representations with the diffusion decoder's continuous latents
+- **Strong Performance**: Achieves 0.87 on GenEval, 87.2 on DPGBench, and 4.06 on ImgEdit, while remaining competitive with understanding-only backbones on multimodal understanding tasks
+
+Trained with roughly 60M supervised generation samples and no reliance on pre-trained generators, Mammoth2 demonstrates that a carefully coupled AR-Diffusion architecture can provide high-fidelity generation and editing while maintaining strong multimodal comprehension within a single, parameter- and data-efficient model.
 
 ## Show cases
 <!-- <div align="center">
@@ -25,12 +34,14 @@ MammothModa2 is a unified Autoregressive-Diffusion (AR-Diffusion) framework desi
 </div>
 
 ## 🎉 News
-- [x] 2025-10-01: 🔥MammothModa2-Preview models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview)
+- 2025-12-10: 🔥MammothModa2-Dev models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev). 
+- 2025-10-01: 🔥MammothModa2-Preview models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview). **Note: To use the Preview version, please switch to the `qwen25vl` branch.**
 
 
 ## 🪄 Models
 | Model | Download Link | License |
 |-------|---------------|----------|
+| MammothModa2-Dev | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev) | [Apache-2.0](https://opensource.org/licenses/Apache-2.0) |
 | MammothModa2-Preview | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview) | [Apache-2.0](https://opensource.org/licenses/Apache-2.0) |
 
 ## ⚙️ Installation
@@ -193,9 +204,9 @@ print(output_texts)
 | BAGEL | 7B + 7B | 0.88 | 85.07 |
 | Show-o2 | 7B | 0.76 | 86.14 |
 | GPT-4o | - | 0.84 | 86.23 |
-| MammothModa2-Preview | 7B + (3B + 2B) | 0.85 | 87.1 |
+| MammothModa2 | 8B + (3B + 2B) | 0.87 | 87.2 |
 
-**Note**: Model sizes in "A + B" format indicate separate understanding (A) and generation (B) parameters. Models without "+" share parameters for both tasks. MammothModa2-Preview uses a 7B + (3B + 2B) architecture, where the 7B parameters are for understanding, and the generation part consists of 3B parameters in the AR (MLLM backbone) and 2B parameters in the DiT component.
+**Note**: Model sizes in "A + B" format indicate separate understanding (A) and generation (B) parameters. Models without "+" share parameters for both tasks. MammothModa2 uses a 8B + (3B + 2B) architecture, where the 8B parameters are for understanding, and the generation part consists of 3B parameters in the AR (MLLM backbone) and 2B parameters in the DiT component.
 
 
 ## Acknowledgement
@@ -208,10 +219,14 @@ We are grateful to the following open-source projects:
 
 ## Citation
 
+If you find MammothModa2 useful in your research, please cite:
+
 ```bibtex
-@misc{mammothmoda2025,
-    title = {MammothModa2: Jointly Optimized Autoregressive-Diffusion Models for Unified Multimodal Understanding and Generation},
-    author = {MammothModa Team},
-    year = {2025},
-    url = {https://github.com/bytedance/mammothmoda}
+@article{shen2025mammothmoda2,
+    title={MammothModa2: A Unified AR-Diffusion Framework for Multimodal Understanding and Generation},
+    author={Shen, Tao and Wan, Xin and Chen, Taicai and Zhang, Rui and Pan, Junwen and Lu, Dawei and Lei, Fanding and Lu, Zhilin and Yang, Yunfei and Cheng, Chen and She, Qi and Liu, Chang and Sun, Zhenbang},
+    journal={arXiv preprint arXiv:2511.18262},
+    year={2025},
+    url={https://arxiv.org/abs/2511.18262}
 }
+```

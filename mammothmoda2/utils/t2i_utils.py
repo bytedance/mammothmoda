@@ -32,21 +32,25 @@ if TYPE_CHECKING:
 
     from mammothmoda2.model import Mammothmoda2Model, MammothUTokenizer
 
-__all__ = ["decode_diffusion_image"]
+__all__ = ["decode_diffusion_image", ]
 
 
-class VAEPostProcessor(Singleton):
-    def __init__(self, vae_scale_factor=16, max_side_length=2048) -> None:
+class VAEProcessor(Singleton):
+    def __init__(self, vae_scale_factor=16, max_side_length=2048, max_pixels=1024 * 1024) -> None:
         if self._initialized:
             return
         self._vae_transform = Mammothmoda2VAEImageProcessor(
             vae_scale_factor=vae_scale_factor,
             max_side_length=max_side_length,
+            max_pixels=max_pixels,
         )
         self._initialized = True
 
-    def __call__(self, image, output_type="pil") -> "Image.Image | np.ndarray | torch.Tensor":
+    def postprocess(self, image, output_type="pil") -> "Image.Image | np.ndarray | torch.Tensor":
         return self._vae_transform.postprocess(image, output_type=output_type)
+
+    def preprocess(self, image) -> "PipelineImageInput":
+        return self._vae_transform.preprocess(image)
 
 
 def remap_unified_tokens(generated_ids: torch.Tensor, tokenizer) -> torch.Tensor:
@@ -92,24 +96,29 @@ def encode_full_prompts(
     negative_mask: torch.BoolTensor,
     questions_mask: torch.BoolTensor | None = None,
     answers_mask: torch.BoolTensor | None = None,
+    gen_condition_mode: str = "text_image",
     **kwargs,  # noqa: ARG001
 ) -> tuple:
     # 1. convert input_ids to positive_hidden_states
     output = model.llm_model(
         input_ids=input_ids,
         attention_mask=attention_mask,
-        output_last_hidden_states=True,
+        output_hidden_states=True,
     )
-    positive_hidden_states = output.last_hidden_states
+    hidden_states = [output.hidden_states[i] for i in model.config.gen_condition_layers]
+    positive_hidden_states = torch.stack(hidden_states, dim=0).mean(dim=0)
     B, L, D = positive_hidden_states.shape
     gen_token_mask = input_ids >= model.llm_model.config.gen_vocab_start_index
-    if "text" in model.config.gen_condition_mode:
+    if "text" in gen_condition_mode:
         visual_tokens_ids = tokenizer.visual_tokens_ids
         visual_token_mask = torch.isin(
             input_ids, torch.tensor(visual_tokens_ids, dtype=torch.long, device=input_ids.device)
         )
         # all the text tokens in question
-        text_condition_token_mask = questions_mask & ~(visual_token_mask | gen_token_mask) & attention_mask
+        if model.config.gen_text_condition_with_answer:
+            text_condition_token_mask = ~(visual_token_mask | gen_token_mask) & attention_mask
+        else:
+            text_condition_token_mask = questions_mask & ~(visual_token_mask | gen_token_mask) & attention_mask
         text_condition_tokens_compact, text_condition_attention_mask = extract_condition_tokens(
             positive_hidden_states, text_condition_token_mask
         )
@@ -117,42 +126,35 @@ def encode_full_prompts(
         text_condition_tokens_compact = positive_hidden_states.new_zeros(B, 0, D)
         text_condition_attention_mask = positive_hidden_states.new_zeros(B, 0, dtype=torch.bool)
 
-    if "image" in model.config.gen_condition_mode:
+    if "image" in gen_condition_mode:
         # all the gen image tokens in answer
         image_condition_token_mask = answers_mask & gen_token_mask
         image_condition_tokens_compact, image_condition_attention_mask = extract_condition_tokens(
             positive_hidden_states, image_condition_token_mask
         )
-        if model.gen_image_condition_refiner is not None:
-            image_condition_tokens_compact = model.gen_image_condition_refiner(
-                image_condition_tokens_compact, ~image_condition_attention_mask.bool()
-            )
-            image_condition_attention_mask = torch.ones(
-                image_condition_tokens_compact.shape[:2], dtype=torch.bool, device=image_condition_tokens_compact.device
-            )
     else:
-        image_condition_tokens_compact = positive_hidden_states.new_zeros(B, 0, D)
-        image_condition_attention_mask = positive_hidden_states.new_zeros(B, 0, dtype=torch.bool)
-
-    condition_tokens_compact = torch.cat([text_condition_tokens_compact, image_condition_tokens_compact], dim=1)
-    condition_attention_mask = torch.cat([text_condition_attention_mask, image_condition_attention_mask], dim=1)
+        image_condition_tokens_compact = None
+        image_condition_attention_mask = None
 
     # 2. convert negative_ids to negative_hidden_states
     if negative_ids is not None:
         output = model.llm_model(
             input_ids=negative_ids,
             attention_mask=negative_mask,
-            output_last_hidden_states=True,
+            output_hidden_states=True,
         )
-        negative_condition_tokens = output.last_hidden_states
+        hidden_states = [output.hidden_states[i] for i in model.config.gen_condition_layers]
+        negative_condition_tokens = torch.stack(hidden_states, dim=0).mean(dim=0)
         negative_attention_mask = negative_mask
     else:
         negative_condition_tokens = None
         negative_attention_mask = None
 
     return (
-        condition_tokens_compact,
-        condition_attention_mask,
+        text_condition_tokens_compact,
+        text_condition_attention_mask,
+        image_condition_tokens_compact,
+        image_condition_attention_mask,
         negative_condition_tokens,
         negative_attention_mask,
     )
@@ -188,8 +190,10 @@ def processing(
     ref_latents,
     scheduler: FlowMatchEulerDiscreteScheduler,
     model,
-    prompt_embeds,
-    prompt_attention_mask,
+    text_prompt_embeds,
+    text_prompt_attention_mask,
+    image_prompt_embeds,
+    image_prompt_attention_mask,
     negative_prompt_embeds,
     negative_attention_mask,
     freqs_cis,
@@ -210,8 +214,10 @@ def processing(
         model_pred = model.gen_transformer(
             hidden_states=latents,
             timestep=timestep,
-            text_hidden_states=prompt_embeds,
-            text_attention_mask=prompt_attention_mask,
+            text_hidden_states=text_prompt_embeds,
+            text_attention_mask=text_prompt_attention_mask,
+            ar_image_hidden_states=image_prompt_embeds,
+            ar_image_attention_mask=image_prompt_attention_mask,
             ref_image_hidden_states=ref_latents,
             freqs_cis=freqs_cis,
         )
@@ -269,7 +275,7 @@ def processing(
 
 @torch.inference_mode()
 def decode_diffusion_image(
-    input_ids: torch.Tensor,
+    prompt_ids: torch.Tensor,
     generated_ids: torch.Tensor,
     attention_mask: torch.Tensor,
     negative_ids: torch.Tensor | None,
@@ -277,8 +283,11 @@ def decode_diffusion_image(
     model: "Mammothmoda2Model",
     tokenizer: "MammothUTokenizer",
     output_dir: str,
+    ref_images: list[torch.Tensor] | None = None,
+    gen_condition_mode: str = "text_image",
     num_images_per_prompt: int = 1,
     text_guidance_scale: float = 5.0,
+    image_guidance_scale: float = 2.0,
     vae_scale_factor: float = 16,
     cfg_range: tuple[float, float] = (0.0, 1.0),
     num_inference_steps: int = 50,
@@ -298,14 +307,16 @@ def decode_diffusion_image(
     attention_mask = torch.concat(
         [attention_mask, torch.ones((num_images_per_prompt, 1), dtype=torch.int64, device=device)], dim=1
     )
-    answer_start_index = input_ids.shape[1] - 10
+    answer_start_index = prompt_ids.shape[1] - 10
     questions_mask = attention_mask.clone()
     questions_mask[:, answer_start_index:] = 0
     answers_mask = attention_mask.clone()
     answers_mask[:, :answer_start_index] = 0
     (
-        condition_tokens_compact,
-        condition_attention_mask,
+        text_condition_tokens_compact,
+        text_condition_attention_mask,
+        image_condition_tokens_compact,
+        image_condition_attention_mask,
         negative_condition_tokens,
         negative_attention_mask,
     ) = encode_full_prompts(
@@ -317,19 +328,27 @@ def decode_diffusion_image(
         negative_mask=negative_mask,
         questions_mask=questions_mask,
         answers_mask=answers_mask,
+        gen_condition_mode=gen_condition_mode,
     )
 
     # 2. Prepare reference latents for control image
     ref_latents = []
-    image_guidance_scale = 1
-    ref_latents = None
-    h, w = height, width
+    if ref_images is not None:
+        for image in ref_images:
+            gen_vae_input = VAEProcessor().preprocess(image).to(device)
+            ref_latents.append(model.encode_vae(gen_vae_input).squeeze(0))
+        h, w = gen_vae_input.shape[2:]
+        image_guidance_scale = image_guidance_scale
+    else:
+        image_guidance_scale = 1
+        ref_latents = None
+        h, w = height, width
     ref_latents = [ref_latents] * num_images_per_prompt
 
     # 3. Prepare input latents for generated image
     latent_channels = model.gen_transformer.config.in_channels
     shape = (num_images_per_prompt, latent_channels, 2 * h // vae_scale_factor, 2 * w // vae_scale_factor)
-    latents = randn_tensor(shape, device=device, dtype=condition_tokens_compact.dtype)
+    latents = randn_tensor(shape, device=device, dtype=text_condition_tokens_compact.dtype)
 
     freqs_cis = RotaryPosEmbedReal.get_freqs_real(
         model.gen_transformer.config.axes_dim_rope,
@@ -344,21 +363,23 @@ def decode_diffusion_image(
         ref_latents,
         scheduler,
         model,
-        prompt_embeds=condition_tokens_compact,
-        prompt_attention_mask=condition_attention_mask,
+        text_prompt_embeds=text_condition_tokens_compact,
+        text_prompt_attention_mask=text_condition_attention_mask,
+        image_prompt_embeds=image_condition_tokens_compact,
+        image_prompt_attention_mask=image_condition_attention_mask,
         negative_prompt_embeds=negative_condition_tokens,
         negative_attention_mask=negative_attention_mask,
         freqs_cis=freqs_cis,
         num_inference_steps=num_inference_steps,
         device=device,
-        dtype=condition_tokens_compact.dtype,
+        dtype=text_condition_tokens_compact.dtype,
         cfg_range=cfg_range,
         text_guidance_scale=text_guidance_scale,
         image_guidance_scale=image_guidance_scale,
     )
 
     # 5. Save the generated image
-    images = VAEPostProcessor()(image)
+    images = VAEProcessor().postprocess(image)
     return_info = []
     if not Path(output_dir).is_dir():
         Path(output_dir).mkdir(parents=True, exist_ok=True)

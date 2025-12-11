@@ -14,7 +14,7 @@
 
 from .block_lumina2 import Lumina2CombinedTimestepCaptionEmbedding
 from .diffusion_transformer import Transformer2DModel
-from .image_embedder import SimpleQFormerImageRefiner
+from .image_refiner import SimpleQFormerImageEmbedder
 from .rope_real import RotaryPosEmbedReal
 from .schedulers import FlowMatchEulerDiscreteScheduler
 from .transport import create_transport
@@ -23,7 +23,7 @@ __all__ = [
     "FlowMatchEulerDiscreteScheduler",
     "Lumina2CombinedTimestepCaptionEmbedding",
     "RotaryPosEmbedReal",
-    "SimpleQFormerImageRefiner",
+    "SimpleQFormerImageEmbedder",
     "Transformer2DModel",
     "create_transport",
 ]
