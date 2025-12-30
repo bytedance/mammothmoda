@@ -230,3 +230,11 @@ If you find MammothModa2 useful in your research, please cite:
     url={https://arxiv.org/abs/2511.18262}
 }
 ```
+
+## 🎯 Join Our Team
+
+**Moderation LLM Team @ ByteDance** - We're hiring talented individuals passionate about multimodal AI, computer vision, and LLM development! 
+
+We develop leading LLMs for content moderation, building infrastructure including model benchmarking, data pipelines, efficient architectures, and training methodologies.
+
+**Contact:** zhangna.2020@bytedance.com
