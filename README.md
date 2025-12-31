@@ -1,48 +1,136 @@
 <div align="center">
 
 
-# MammothModa2: A Unified AR-Diffusion Framework for Multimodal Understanding and Generation
-<img src='./doc/logo.png' alt="MammothModa Logo" width="100" style="max-width: 100px; height: auto;">
+# MammothModa2: A Unified AR-Diffusion Framework for Visual Understanding and Generation
 
-[![GitHub](https://img.shields.io/badge/MammothModa2-GitHub-blue)](https://github.com/bytedance/mammothmoda)
-[![Project Page](https://img.shields.io/badge/MammothModa2-Project_Page-green)](https://ali-vilab.github.io/MammothModa-Page/)
-[![HuggingFace](https://img.shields.io/badge/MammothModa2-HuggingFace_Model-yellow)](https://huggingface.co/bytedance-research/MammothModa2-Preview)
-[![Report](https://img.shields.io/badge/MammothModa2-arXiv-red)](https://arxiv.org/abs/2511.18262)
+<p align="center">
+  🌐 <a href="https://mammothmoda2.github.io/"><b>Homepage</b></a> &nbsp;&nbsp;|&nbsp;&nbsp; 📑 <a href="https://arxiv.org/abs/2511.18262">Technical Report</a>
+  <br>
+</p>
 
 </div>
 
-
 ## Introduction
 
-MammothModa2 (Mammoth2) is a unified autoregressive-diffusion (AR-Diffusion) framework that seamlessly integrates multimodal understanding and generation within a single model. Mammoth2 effectively couples autoregressive semantic planning with diffusion-based generation, enabling high-quality text-to-image generation, instruction-based editing, and comprehensive multimodal understanding.
+MammothModa2 (Mammoth2) is a unified autoregressive-diffusion (AR-Diffusion) framework that seamlessly integrates multimodal understanding and generation within a single model. Mammoth2 effectively couples autoregressive semantic planning with a **Mixture-of-Experts (MoE) diffusion-based generation** backbone, enabling high-quality text-to-image generation, **text-to-video generation**, instruction-based editing, and comprehensive multimodal understanding.
+
+<p align="center">
+  <img src="./doc/highlight_moe.png" alt="MoE Architecture" width="750" />
+</p>
+
+<div align="center">
+  <hr width="750" size="1" color="#e5e7eb" />
+</div>
+
+<p align="center">
+  <img src="./doc/highlight_benchmark.png" alt="Benchmark" width="750" />
+</p>
 
 **Key Features:**
-- **Serial AR-Diffusion Architecture**: An AR path performs global semantic modeling over discrete tokens, while a single-stream Diffusion Transformer (DiT) decoder handles high-fidelity image synthesis
-- **Unified Joint Training**: End-to-end training with joint Next-Token Prediction and Flow Matching objectives, followed by supervised fine-tuning and reinforcement learning
-- **Feature Alignment Module**: A carefully designed AR-Diffusion feature alignment module combines multi-layer feature aggregation, unified condition encoding, and in-context conditioning to stably align AR's representations with the diffusion decoder's continuous latents
-- **Strong Performance**: Achieves 0.87 on GenEval, 87.2 on DPGBench, and 4.06 on ImgEdit, while remaining competitive with understanding-only backbones on multimodal understanding tasks
+- **MoE DiT for Video Generation at Scale** MammothModa2 integrates a **Mixture-of-Experts (MoE)** architecture into the **Video Generation** pipeline to address the compute bottlenecks that emerge when scaling video models. MammothModa includes two MoE variants: 20B-A3B (E48A6) and 6B-A1.2B (E32A4). Despite having ~40% more total parameters than WanVideo 14B, the 20B model activates only ~20% of parameters at inference, achieving up to **15.1×** faster generation.
+- **Unified Multimodal Design** A single AR-diffusion framework built on Qwen3VL for multimodal understanding and an MoE DiT backbone for generation, supporting text-to-image, image editing, and text-to-video generation with shared representations and training recipes.
+- **🚀 Superior Efficiency**: Mammoth25 (20B-A3B) delivers 11–15× lower video latency than state-of-the-art video generators (e.g., LongCat-Video), while achieving strong quality on VBench2.0 with a 60.97% total score, outperforming Wan2.1-14B and HunyuanVideo1.0-13B and approaching LongCat-Video-14B.
 
-Trained with roughly 60M supervised generation samples and no reliance on pre-trained generators, Mammoth2 demonstrates that a carefully coupled AR-Diffusion architecture can provide high-fidelity generation and editing while maintaining strong multimodal comprehension within a single, parameter- and data-efficient model.
+## 🎉 News
+- 2025-12-31: 🔥Released **MammothModa2** with **MoE DiT** architecture, now supporting **Video Generation**! Check out our new [Project Page](https://mammothmoda2.github.io/). Code is available at [MammothModa25](https://github.com/bytedance/mammothmoda/tree/main/mammothmoda25).
+- 2025-12-10: 🔥MammothModa2-Dev build upon Qwen3VL-8B supports Image Editing are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev). 
+- 2025-10-01: 🔥MammothModa2-Preview models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview). **Note: To use the Preview version, please switch to the `qwen25vl` branch.**
 
-## Show cases
-<!-- <div align="center">
-  <img src='./mammoth.png' alt="MammothModa Overview" width="80%">
-</div> -->
+## Showcases
+
+### Text-to-Video Generation & Video Editing (Coming Soon)
+
+MammothModa2 supports high-quality text-to-video generation. 
+
+<table>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/0b5d403b-0565-4c82-a4d4-bce0631f203b" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Cinematic Shots</b>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        "俯视角度，一位有着深色，略带凌乱的长卷发的年轻中国女性，佩戴着闪耀的珍珠项链和圆形金色耳环，她凌乱的头发被风吹散，她微微抬头，望向天空，神情十分哀伤，眼中含着泪水。嘴唇涂着红色口红。背景是带有华丽红色花纹的图案。画面呈现复古电影风格，色调低饱和，带着轻微柔焦，烘托情绪氛围，质感仿佛20世纪90年代的经典胶片风格，营造出怀旧且富有戏剧性的感觉。"
+      </details>
+    </td>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/486bf448-c612-4b1b-953e-9493855df5b4" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Animal Interaction</b>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        "A medium shot of a chameleon carefully crawling along a tree branch, its feet gripping tightly to the bark. The camera captures the slow, deliberate movements, the slight shifting of colors, and the independent movement of its eyes."
+      </details>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/a5e91bb6-e595-41ac-89b5-f77cf639115e" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Motion</b>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        "A man wearing a black leather jacket and sunglasses rides a motorcycle down a winding mountain road, the road is carved into the mountainside, the scenery is breathtaking with steep cliffs and deep valleys, the sky is clear and blue, the camera follows the motorcycle from behind, capturing the speed and freedom of the ride, the motorcycle is sleek and black, the man's jacket flutters in the wind, the scene is exhilarating and cinematic. 
+        "
+      </details>
+    </td>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/4f855139-4d1e-4a66-b939-982cfa485648" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Scenery</b>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        "A man wearing a green raincoat and boots walks through a dense forest in the rain, the trees are tall and create a canopy overhead, the rain is visible as it falls through the trees, the ground is covered in fallen leaves, the scene is moody and atmospheric, captured with a handheld camera, the man is slightly hunched, protecting himself from the rain, the forest is dark and mysterious, the rain creates a peaceful ambiance."
+      </details>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/7d7b2da8-0774-40b4-80c7-4c5fd78a2320" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>High-Speed Motion</b>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        "In a magical, floating island world, a young adventurer with a jetpack soars through the sky, dodging floating rocks and mystical creatures. The camera follows the adventurer from behind, offering a sweeping view of the vast, interconnected islands, each with its unique terrain and ecosystem. The animation features fluid, high-speed flying sequences, with the adventurer narrowly avoiding obstacles and discovering hidden treasure."
+      </details>
+    </td>
+    <td width="50%">
+       <div align="center">
+        <a href="https://mammothmoda2.github.io/">View More on Project Page</a>
+      </div>
+    </td>
+  </tr>
+</table>
+
+### Text-to-Image & Image Editing
 
 <div align="center">
   <img src='./doc/mammoth.png' alt="MammothModa2 Show cases" style="max-width: 80%; height: auto;">
 </div>
 
-## 🎉 News
-- 2025-12-10: 🔥MammothModa2-Dev models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev). 
-- 2025-10-01: 🔥MammothModa2-Preview models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview). **Note: To use the Preview version, please switch to the `qwen25vl` branch.**
-
 
 ## 🪄 Models
-| Model | Download Link | License |
-|-------|---------------|----------|
-| MammothModa2-Dev | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev) | [Apache-2.0](https://opensource.org/licenses/Apache-2.0) |
-| MammothModa2-Preview | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview) | [Apache-2.0](https://opensource.org/licenses/Apache-2.0) |
+| Model | Download Link | Arch |Description|
+|-------|---------------|-------------|-------------|
+| MammothModa2_5-6B-A1.2B| [Coming Soon] |Qwen3VL + 6B-A1.2B MoE DiT | 🔥 Supporting Video Generation. |
+| MammothModa2_5-20B-A3B| [Coming Soon] |Qwen3VL + 20B-A3B MoE DiT | 🔥 Supporting Video Generation. |
+| MammothModa2-Dev | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev) | Qwen3VL-8B + 3B gen experts + 2B dense DiT | Image Generation & Editing|
+| MammothModa2-Preview | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview) | Qwen25VL-7B + 3B gen experts + 2B dense DiT| Image Generation. Note: Please switch to the `qwen25vl` branch. |
 
 ## ⚙️ Installation
 
@@ -185,6 +273,8 @@ print(output_texts)
 
 ## 📊 Benchmark Results
 
+### Text-to-Image
+
 | Model | Model Size | GenEval | DPGBench |
 |-------|------------|---------|----------|
 | **Generation** |
@@ -208,6 +298,18 @@ print(output_texts)
 
 **Note**: Model sizes in "A + B" format indicate separate understanding (A) and generation (B) parameters. Models without "+" share parameters for both tasks. MammothModa2 uses a 8B + (3B + 2B) architecture, where the 8B parameters are for understanding, and the generation part consists of 3B parameters in the AR (MLLM backbone) and 2B parameters in the DiT component.
 
+### Text-to-Video
+
+Coming soon.
+
+### Image Editing
+
+Coming soon.
+
+### Video Editing
+
+Coming soon.
+
 
 ## Acknowledgement
 
@@ -230,3 +332,11 @@ If you find MammothModa2 useful in your research, please cite:
     url={https://arxiv.org/abs/2511.18262}
 }
 ```
+
+## 🎯 Join Our Team
+
+**Moderation LLM Team @ ByteDance** - We're hiring talented individuals passionate about multimodal AI, computer vision, and MLLM development! 
+
+We develop leading MLLMs for content moderation, building infrastructure including model benchmarking, data pipelines, efficient architectures, and training methodologies.
+
+**Contact:**  liuchang.lab@bytedance.com
