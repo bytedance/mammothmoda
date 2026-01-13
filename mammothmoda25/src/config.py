@@ -44,6 +44,7 @@ class VLMTokenRefinerConfig:
     use_transformer: bool = True
     vlm_dim: int = 4096
     transformer_config: TransformerConnectorConfig = field(default_factory=TransformerConnectorConfig)
+    enable: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         config_dict = asdict(self)

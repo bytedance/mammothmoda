@@ -54,15 +54,17 @@ class MoELayer(torch.nn.Module):
                 weighted_output = expert_output * expert_weights
                 output_flat[token_mask] += weighted_output
 
+            
+            if self.shared_experts is not None:
+                
+                shared_fc1_out = torch.matmul(flat_hidden, self.shared_experts.weight1.t())
+                shared_inter = self.shared_experts.activation_func(shared_fc1_out)
+                shared_out = torch.matmul(shared_inter, self.shared_experts.weight2.t())
+                output_flat += shared_out
+                
+            mlp_bias = None
             output = output_flat.reshape(batch_size, seq_len, hidden_dim)
 
-            if self.shared_experts is not None:
-                shared_fc1_out = torch.matmul(flat_hidden, self.shared_experts.weight1)
-                shared_inter = self.shared_experts.activation_func(shared_fc1_out)
-                shared_out = torch.matmul(shared_inter, self.shared_experts.weight2)
-                output_flat += shared_out
-            
-            mlp_bias = None
             return output, mlp_bias
         
         output, mlp_bias = custom_forward(hidden_states)
@@ -239,20 +241,36 @@ class Expert(torch.nn.Module):
             fc1_output_size *= 2
 
         self.activation_func = torch.nn.GELU(approximate="tanh")
-        self.weight1 = torch.nn.Parameter(
-            torch.zeros(
-                self.config.hidden_size,
-                fc1_output_size,
-                dtype=torch.bfloat16,
+        if is_shared:
+            self.weight1 = torch.nn.Parameter(
+                torch.zeros(
+                    fc1_output_size,
+                    self.config.hidden_size,
+                    dtype=torch.bfloat16,
+                )
             )
-        )
-        self.weight2 = torch.nn.Parameter(
-            torch.zeros(
-                fc2_input_size,
-                self.config.hidden_size,
-                dtype=torch.bfloat16,
+            self.weight2 = torch.nn.Parameter(
+                torch.zeros(
+                    self.config.hidden_size,
+                    fc2_input_size,
+                    dtype=torch.bfloat16,
+                )
             )
-        )
+        else:
+            self.weight1 = torch.nn.Parameter(
+                torch.zeros(
+                    self.config.hidden_size,
+                    fc1_output_size,
+                    dtype=torch.bfloat16,
+                )
+            )
+            self.weight2 = torch.nn.Parameter(
+                torch.zeros(
+                    fc2_input_size,
+                    self.config.hidden_size,
+                    dtype=torch.bfloat16,
+                )
+            )
 
 
 

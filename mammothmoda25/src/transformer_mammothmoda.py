@@ -32,9 +32,9 @@ from diffusers.models.modeling_outputs import Transformer2DModelOutput
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.normalization import FP32LayerNorm
 from diffusers.models.transformers.transformer_wan import  WanAttnProcessor, WanAttention, WanImageEmbedding, WanRotaryPosEmbed
-from moe_layer import MoELayer
-from config import MoELayerConfig, VLMTokenRefinerConfig
-from vlm_refiner import VLMTokenRefiner
+from .moe_layer import MoELayer
+from .config import MoELayerConfig, VLMTokenRefinerConfig
+from .vlm_refiner import VLMTokenRefiner
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -110,9 +110,9 @@ class WanTransformerBlock(nn.Module):
 
         # MoE Layer
         if num_heads == 12:
-            moe_config = MoE_CONFIG_7B_A1_3B 
+            moe_config = MoE_CONFIG_6B_A1B 
         else:
-            moe_config = MoE_CONFIG_20B_A4_5B
+            moe_config = MoE_CONFIG_20B_A3B
 
         self.ffn = MoELayer(config=moe_config)
         self.norm3 = FP32LayerNorm(dim, eps, elementwise_affine=False)
@@ -124,6 +124,7 @@ class WanTransformerBlock(nn.Module):
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
         rotary_emb: torch.Tensor,
+        self_attn_mask: torch.Tensor,
     ) -> torch.Tensor:
         if temb.ndim == 4:
             # temb: batch_size, seq_len, 6, inner_dim (wan2.2 ti2v)
@@ -145,7 +146,7 @@ class WanTransformerBlock(nn.Module):
 
         # 1. Self-attention
         norm_hidden_states = (self.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
-        attn_output = self.attn1(norm_hidden_states, None, None, rotary_emb)
+        attn_output = self.attn1(norm_hidden_states, None, self_attn_mask, rotary_emb)
         hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
 
         # 2. Feed-forward
@@ -277,8 +278,8 @@ class WanTransformer3DModel(
 
         self.gradient_checkpointing = False
 
-        connector_config = VLMTokenRefinerConfig().to_dict()
         # 5. VLM token refiner
+        connector_config = VLMTokenRefinerConfig(enable=True).to_dict()
         self.converter_mlp = VLMTokenRefiner(
                 in_dim=connector_config.get("vlm_dim", 4096),
                 out_dim=text_dim,
@@ -294,6 +295,16 @@ class WanTransformer3DModel(
         )
         self.hidden_size = inner_dim
 
+    def generate_mask_from_embedding(self, prompt_embeds):
+        if not isinstance(prompt_embeds, torch.Tensor):
+            raise TypeError(f"prompt_embeds必须是torch.Tensor，当前类型：{type(prompt_embeds)}")
+        if len(prompt_embeds.shape) != 3:
+            raise ValueError(f"prompt_embeds必须是3维张量 [batch, seq_len, hidden_dim]，当前shape：{prompt_embeds.shape}")
+        
+        mask = (prompt_embeds != 0).any(dim=-1).long()
+        mask = mask.to(prompt_embeds.device)
+        return mask
+    
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -303,16 +314,35 @@ class WanTransformer3DModel(
         return_dict: bool = True,
         attention_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
+        
+        if encoder_hidden_states.device != hidden_states.device:
+            encoder_hidden_states = encoder_hidden_states.to(device=hidden_states.device)
+
+        prompt_mask = self.generate_mask_from_embedding(encoder_hidden_states)
+        
         if attention_kwargs is not None:
             attention_kwargs = attention_kwargs.copy()
             lora_scale = attention_kwargs.pop("scale", 1.0)
         else:
             lora_scale = 1.0
 
-        self.converter_mlp = self.converter_mlp.to(torch.bfloat16)
+        encoder_hidden_states = encoder_hidden_states.unsqueeze(0)
+        self.converter_mlp = self.converter_mlp.to(device=hidden_states.device, dtype=torch.bfloat16)
         encoder_hidden_states = self.converter_mlp(encoder_hidden_states)
         vlm_context_emb = None
         vlm_seq_len = self.text_len
+
+        # breakpoint()
+        # prompt embeddings
+        bs = encoder_hidden_states.size(0)
+        encoder_hidden_states = encoder_hidden_states.view(bs, -1, encoder_hidden_states.size(-1))
+        if prompt_mask is not None:
+            seq_lens = prompt_mask.view(bs, -1).sum(dim=-1)
+            seq_lens = seq_lens.to(torch.int64)
+            for i, seq_len in enumerate(seq_lens):
+                encoder_hidden_states[i, seq_len:] = 0
+        # breakpoint()
+        # encoder_hidden_states = encoder_hidden_states.squeeze(0)
 
         if USE_PEFT_BACKEND:
             # weight the lora layers by setting `lora_scale` for each PEFT layer
@@ -373,7 +403,7 @@ class WanTransformer3DModel(
             (batch_size, vlm_seq_len, 1, freqs_cos.shape[-1]),
             device=freqs_cos.device, dtype=freqs_cos.dtype
         )
-        vlm_rotary_zeros_sin = torch.ones(
+        vlm_rotary_zeros_sin = torch.zeros(
             (batch_size, vlm_seq_len, 1, freqs_sin.shape[-1]),
             device=freqs_sin.device, dtype=freqs_sin.dtype
         )
@@ -391,15 +421,37 @@ class WanTransformer3DModel(
         if encoder_hidden_states_image is not None:
             encoder_hidden_states = torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)
 
+        # 
+        if prompt_mask is not None:
+            p_mask = prompt_mask.view(batch_size, -1)
+            # truncate or pad p_mask to match vlm_seq_len
+            if p_mask.size(1) > vlm_seq_len:
+                p_mask = p_mask[:, :vlm_seq_len]
+            elif p_mask.size(1) < vlm_seq_len:
+                padding = torch.zeros((batch_size, vlm_seq_len - p_mask.size(1)), device=p_mask.device, dtype=p_mask.dtype)
+                p_mask = torch.cat([p_mask, padding], dim=1)
+            
+            # Full sequence mask: [vlm_tokens, video_tokens]
+            # prompt_mask: 1 is valid, 0 is padding.
+            # atten_mask for NPU fusion attention: True/1 is masked out, False/0 is valid.
+            vlm_padding_mask = (p_mask == 0)
+            video_seq_len = hidden_states.shape[1] - vlm_seq_len
+            video_padding_mask = torch.zeros((batch_size, video_seq_len), device=p_mask.device, dtype=torch.bool)
+            full_padding_mask = torch.cat([vlm_padding_mask, video_padding_mask], dim=1) # [B, S]
+            
+            # Expand to [B, 1, S, S] for FlashAttention
+            S = full_padding_mask.shape[-1]
+            self_attn_mask = (~full_padding_mask).view(batch_size, 1, 1, S).expand(batch_size, 1, S, S).to(hidden_states.device)
+
         # 4. Transformer blocks
         if torch.is_grad_enabled() and self.gradient_checkpointing:
             for block in self.blocks:
                 hidden_states = self._gradient_checkpointing_func(
-                    block, hidden_states, encoder_hidden_states, timestep_proj, rotary_emb
+                    block, hidden_states, encoder_hidden_states, timestep_proj, rotary_emb, self_attn_mask
                 )
         else:
             for block in self.blocks:
-                hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
+                hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb, self_attn_mask)
 
         hidden_states = hidden_states[:, vlm_seq_len:, :]
 
@@ -439,8 +491,8 @@ class WanTransformer3DModel(
         return Transformer2DModelOutput(sample=output)
 
 
-# 7B-A1.3B MoE Config
-MoE_CONFIG_7B_A1_3B = MoELayerConfig(
+# 6B-A1B MoE Config
+MoE_CONFIG_6B_A1B = MoELayerConfig(
     num_layers=32,
     hidden_size=1536,
     num_attention_heads=12,
@@ -458,8 +510,8 @@ MoE_CONFIG_7B_A1_3B = MoELayerConfig(
     num_shared_experts=0
 )
 
-# 20B-A4.5B MoE Config
-MoE_CONFIG_20B_A4_5B = MoELayerConfig(
+# 20B-A3B MoE Config
+MoE_CONFIG_20B_A3B = MoELayerConfig(
     num_layers=30,
     hidden_size=3072,
     num_attention_heads=24,
