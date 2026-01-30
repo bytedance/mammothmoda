@@ -339,4 +339,21 @@ If you find MammothModa2 useful in your research, please cite:
 
 We develop leading MLLMs for content moderation, building infrastructure including model benchmarking, data pipelines, efficient architectures, and training methodologies.
 
+**Recent Publications (2024–2026):**
+- Pan, J., Zhang, Q., Zhang, R., Lu, M., Wan, X., Zhang, Y., Liu, C., & She, Q. (2025). TimeSearch-R: Adaptive Temporal Search for Long-Form Video Understanding via Self-Verification Reinforcement Learning. ICLR 26.
+- Li, Y., Wang, Y., Zhu, Y., Zhao, Z., Lu, M., She, Q., & Zhang, S. (2025). BranchGRPO: Stable and Efficient GRPO with Structured Branching in Diffusion Models. ICLR 26.
+- Li, Z., Qian, D., Su, K., Diao, Q., Xia, X., Liu, C., ... & Yuan, Z. (2025). Bindweave: Subject-consistent video generation via cross-modal integration. ICLR 26.
+- Zhang, Q., Cheng, A., Lu, M., Zhuo, Z., Wang, M., Cao, J., Guo, S., She, Q., & Zhang, S. Beyond Text-Visual Attention: Exploiting Visual Cues for Effective Token Pruning in VLMs. ICCV 25.
+- Xie, R., Du, C., Song, P., & Liu, C. (2025). Muse-vl: Modeling unified vlm through semantic discrete encoding. ICCV 25.
+- Zhang, Q., Liu, M., Li, L., Lu, M., Zhang, Y., Pan, J., She, Q., & Zhang, S. (2025). Beyond Attention or Similarity: Maximizing Conditional Diversity for Token Pruning in MLLMs. NeurIPS 25.
+- Lin, L., Shi, D., Han, A., Chen, F., Chen, Q., Li, J., ... & Gao, J. (2025). ACT as human: Multimodal large language model data annotation with critical thinking. NeurIPS 25.
+- Yu, S., Jin, C., Wang, H., Chen, Z., Jin, S., Zuo, Z., ... & Sun, Q. (2024). Frame-voyager: Learning to query frames for video large language models. ICLR 25.
+- Pan, J., Zhang, R., Wan, X., Zhang, Y., Lu, M., & She, Q. (2025). Timesearch: Hierarchical video search with spotlight and reflection for human-like long video understanding. arXiv Preprint arXiv:2504.01407.
+- Liu, Z., Pan, J., She, Q., Gao, Y., & Xia, G. (2025). On the Faithfulness of Visual Thinking: Measurement and Enhancement. arXiv Preprint arXiv:2510.23482.
+- Zhang, Y., Fan, C.-K., Huang, T., Lu, M., Yu, S., Pan, J., Cheng, K., She, Q., & Zhang, S. (2025). AutoV: Learning to Retrieve Visual Prompt for Large Vision-Language Models. arXiv Preprint arXiv:2506.16112.
+- Yuan Zhang, Ming Lu, Junwen Pan, Tao Huang, Kuan Cheng, Chang Liu, Qi She, Shanghang Zhang(2025). ChainV: Atomic Visual Hints Make Multimodal Reasoning Shorter and Better. arXiv Preprint arXiv:2511.17106.
+- Shi, H., Liang, J., Xie, R., Wu, X., Chen, C., & Liu, C. (2025). Aquarius: A Family of Industry-Level Video Generation Models for Marketing Scenarios. arXiv preprint arXiv:2505.10584.
+- Shen, T., Wan, X., Chen, T., Zhang, R., Pan, J., Lu, D., Lei, F., Lu, Z., Yang, Y., & Cheng, C. (2025). MammothModa2: A Unified AR-Diffusion Framework for Multimodal Understanding and Generation. arXiv Preprint arXiv:2511.18262.
+- Qi She, Junwen Pan, Xin Wan, Rui Zhang, Dawei Lu, Kai Huang. (2024). MammothModa: Multi-Modal Large Language Model. arXiv.
+
 **Contact:**  liuchang.lab@bytedance.com
