@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders import FromOriginalModelMixin, PeftAdapterMixin
@@ -39,6 +40,51 @@ from .vlm_refiner import VLMTokenRefiner
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
+class ByT5Mapper(nn.Module):
+    """
+    ByT5Mapper: Maps ByT5 encoder outputs to a new space, with optional residual connection.
+
+    Args:
+        in_dim (int): Input dimension (must equal out_dim if use_residual).
+        out_dim (int): Output dimension after second linear layer.
+        hidden_dim (int): Hidden dimension for intermediate layer.
+        out_dim1 (int): Final output dimension.
+        use_residual (bool): Whether to use residual connection (default: True).
+    """
+
+    def __init__(self, in_dim, out_dim, hidden_dim, out_dim1, use_residual=True):
+        super().__init__()
+        if use_residual:
+            assert in_dim == out_dim
+        self.layernorm = nn.LayerNorm(in_dim)
+        self.fc1 = nn.Linear(in_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, out_dim)
+        self.fc3 = nn.Linear(out_dim, out_dim1)
+        self.use_residual = use_residual
+        self.act_fn = nn.GELU()
+
+    def forward(self, x):
+        """
+        Forward pass for ByT5Mapper.
+
+        Args:
+            x (Tensor): Input tensor of shape (..., in_dim).
+
+        Returns:
+            Tensor: Output tensor of shape (..., out_dim1).
+        """
+        residual = x
+        x = self.layernorm(x)
+        x = self.fc1(x)
+        x = self.act_fn(x)
+        x = self.fc2(x)
+        x2 = self.act_fn(x)
+        x2 = self.fc3(x2)
+        if self.use_residual:
+            x2 = x2 + residual
+        return x2
+
+
 class WanTimeTextImageEmbedding(nn.Module):
     def __init__(
         self,
@@ -55,11 +101,25 @@ class WanTimeTextImageEmbedding(nn.Module):
         self.time_embedder = TimestepEmbedding(in_channels=time_freq_dim, time_embed_dim=dim)
         self.act_fn = nn.SiLU()
         self.time_proj = nn.Linear(dim, time_proj_dim)
+        self.freq_dim = 256
 
         self.image_embedder = None
         if image_embed_dim is not None:
             self.image_embedder = WanImageEmbedding(image_embed_dim, dim, pos_embed_seq_len=pos_embed_seq_len)
 
+    def sinusoidal_embedding_1d(self, dim, position, theta=10000):
+        sinusoid = torch.outer(
+            position.type(torch.float64),
+            torch.pow(
+                theta,
+                -torch.arange(
+                    dim // 2, dtype=torch.float64, device=position.device
+                ).div(dim // 2),
+            ),
+        )
+        embs = torch.cat([torch.cos(sinusoid), torch.sin(sinusoid)], dim=1)
+        return embs.to(position.dtype)
+        
     def forward(
         self,
         timestep: torch.Tensor,
@@ -67,7 +127,7 @@ class WanTimeTextImageEmbedding(nn.Module):
         encoder_hidden_states_image: Optional[torch.Tensor] = None,
         timestep_seq_len: Optional[int] = None,
     ):
-        timestep = self.timesteps_proj(timestep)
+        timestep = self.sinusoidal_embedding_1d(self.freq_dim, timestep.float())
         if timestep_seq_len is not None:
             timestep = timestep.unflatten(0, (-1, timestep_seq_len))
 
@@ -240,6 +300,7 @@ class WanTransformer3DModel(
         added_kv_proj_dim: Optional[int] = None,
         rope_max_seq_len: int = 1024,
         pos_embed_seq_len: Optional[int] = None,
+        enable_byt5: bool = False,
     ) -> None:
         super().__init__()
 
@@ -294,6 +355,15 @@ class WanTransformer3DModel(
             torch.randn(1, self.text_len, inner_dim) * 0.02
         )
         self.hidden_size = inner_dim
+        self.enable_byt5 = enable_byt5
+        if self.enable_byt5:
+            self.byt5_in = ByT5Mapper(
+                in_dim=1472,
+                out_dim=4096,
+                hidden_dim=4096,
+                out_dim1=4096,
+                use_residual=False
+            )
 
     def generate_mask_from_embedding(self, prompt_embeds):
         if not isinstance(prompt_embeds, torch.Tensor):
@@ -310,15 +380,25 @@ class WanTransformer3DModel(
         hidden_states: torch.Tensor,
         timestep: torch.LongTensor,
         encoder_hidden_states: torch.Tensor,
+        video_vae_features: torch.Tensor = None,
         encoder_hidden_states_image: Optional[torch.Tensor] = None,
         return_dict: bool = True,
         attention_kwargs: Optional[Dict[str, Any]] = None,
+        prompt_mask: Optional[torch.Tensor] = None,
+        byt5_prompt_embeds: Optional[torch.Tensor] = None,
+        byt5_prompt_embeds_mask: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, Dict[str, torch.Tensor]]:
         
         if encoder_hidden_states.device != hidden_states.device:
             encoder_hidden_states = encoder_hidden_states.to(device=hidden_states.device)
-
-        prompt_mask = self.generate_mask_from_embedding(encoder_hidden_states)
+        if prompt_mask is None:
+            prompt_mask = self.generate_mask_from_embedding(encoder_hidden_states)
+        elif prompt_mask.device != hidden_states.device:
+            prompt_mask = prompt_mask.to(device=hidden_states.device)
+        if byt5_prompt_embeds is not None and byt5_prompt_embeds.device != hidden_states.device:
+            byt5_prompt_embeds = byt5_prompt_embeds.to(device=hidden_states.device)
+        if byt5_prompt_embeds_mask is not None and byt5_prompt_embeds_mask.device != hidden_states.device:
+            byt5_prompt_embeds_mask = byt5_prompt_embeds_mask.to(device=hidden_states.device)
         
         if attention_kwargs is not None:
             attention_kwargs = attention_kwargs.copy()
@@ -331,9 +411,45 @@ class WanTransformer3DModel(
         encoder_hidden_states = self.converter_mlp(encoder_hidden_states)
         vlm_context_emb = None
         vlm_seq_len = self.text_len
+        if self.enable_byt5 and byt5_prompt_embeds is not None:
+            byt5_prompt_embeds = self.byt5_in(byt5_prompt_embeds)
+            byt5_prompt_embeds_mask = byt5_prompt_embeds_mask
+            bs = encoder_hidden_states.shape[0]
+            target_len = self.text_len
+            vlm_actual_seq_len = prompt_mask.sum(dim=-1).clamp(min=0)
+            byt5_actual_seq_len = byt5_prompt_embeds_mask.sum(dim=-1).clamp(min=0)
+            print(f"vlm_actual_seq_len: {vlm_actual_seq_len}, byt5_actual_seq_len: {byt5_actual_seq_len}")
+            encoder_hidden_states_sq = encoder_hidden_states.squeeze(1)
+            byt5_prompt_embeds_sq = byt5_prompt_embeds.squeeze(1)
+            prompt_mask_sq = prompt_mask.squeeze(1)
+            byt5_prompt_embeds_mask_sq = byt5_prompt_embeds_mask.squeeze(1)
 
-        # breakpoint()
-        # prompt embeddings
+            encoder_hidden_states_slices = [encoder_hidden_states_sq[i].narrow(0, 0, vlm_actual_seq_len[i]) for i in range(bs)]
+            byt5_slices = [byt5_prompt_embeds_sq[i].narrow(0, 0, byt5_actual_seq_len[i]) for i in range(bs)]
+            prompt_mask_slices = [prompt_mask_sq[i].narrow(0, 0, vlm_actual_seq_len[i]) for i in range(bs)]
+            byt5_mask_slices = [byt5_prompt_embeds_mask_sq[i].narrow(0, 0, byt5_actual_seq_len[i]) for i in range(bs)]
+
+            encoder_hidden_states_processed = []
+            prompt_mask_processed = []
+            for p, b, pm, bm in zip(encoder_hidden_states_slices, byt5_slices, prompt_mask_slices, byt5_mask_slices):
+                p_concat = torch.cat([p, b], dim=0)
+                pm_concat = torch.cat([pm, bm], dim=0)
+                current_cl = p_concat.shape[0]
+
+                if current_cl > target_len:
+                    p_concat = p_concat[:target_len, :]
+                    pm_concat = pm_concat[:target_len]
+                else:
+                    pad_len = target_len - current_cl
+                    p_concat = torch.nn.functional.pad(p_concat, (0, 0, 0, pad_len), value=0.0)
+                    pm_concat = torch.nn.functional.pad(pm_concat, (0, pad_len), value=0)
+                
+                encoder_hidden_states_processed.append(p_concat)
+                prompt_mask_processed.append(pm_concat)
+
+            encoder_hidden_states = torch.stack(encoder_hidden_states_processed, dim=0)
+            prompt_mask = torch.stack(prompt_mask_processed, dim=0)
+
         bs = encoder_hidden_states.size(0)
         encoder_hidden_states = encoder_hidden_states.view(bs, -1, encoder_hidden_states.size(-1))
         if prompt_mask is not None:
@@ -341,8 +457,6 @@ class WanTransformer3DModel(
             seq_lens = seq_lens.to(torch.int64)
             for i, seq_len in enumerate(seq_lens):
                 encoder_hidden_states[i, seq_len:] = 0
-        # breakpoint()
-        # encoder_hidden_states = encoder_hidden_states.squeeze(0)
 
         if USE_PEFT_BACKEND:
             # weight the lora layers by setting `lora_scale` for each PEFT layer
@@ -361,8 +475,17 @@ class WanTransformer3DModel(
 
         rotary_emb = self.rope(hidden_states)
 
+        if video_vae_features is not None:
+            hidden_states = torch.cat([hidden_states, video_vae_features], dim=0).to(hidden_states.dtype)
+            freqs_cos = torch.cat([rotary_emb[0], rotary_emb[0]], dim=1)
+            freqs_sin = torch.cat([rotary_emb[1], rotary_emb[1]], dim=1)
+            rotary_emb = (freqs_cos, freqs_sin)
+
         hidden_states = self.patch_embedding(hidden_states)
-        hidden_states = hidden_states.flatten(2).transpose(1, 2)
+        if video_vae_features is not None:
+            hidden_states = rearrange(hidden_states, "(n b) c f h w -> b (n f h w) c", n=2).contiguous()
+        else:
+            hidden_states = hidden_states.flatten(2).transpose(1, 2)
 
         # timestep shape: batch_size, or batch_size, seq_len (wan 2.2 ti2v)
         if timestep.ndim == 2:
@@ -474,12 +597,22 @@ class WanTransformer3DModel(
 
         hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
         hidden_states = self.proj_out(hidden_states)
-
-        hidden_states = hidden_states.reshape(
-            batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
-        )
-        hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
-        output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+  
+        if video_vae_features is None:
+            hidden_states = hidden_states.reshape(
+                batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
+            )
+            hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
+            output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+        else:
+            hidden_states = hidden_states.reshape(
+                batch_size, 2,
+                post_patch_num_frames, post_patch_height, post_patch_width,
+                p_t, p_h, p_w, -1
+            )
+            hidden_states = hidden_states.permute(1, 0, 8, 2, 5, 3, 6, 4, 7)
+            hidden_states = hidden_states.flatten(0, 1)
+            output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)[:batch_size]
 
         if USE_PEFT_BACKEND:
             # remove `lora_scale` from each PEFT layer
