@@ -12,7 +12,7 @@
 
 ## Introduction
 
-MammothModa2 (Mammoth2) is a unified autoregressive-diffusion (AR-Diffusion) framework that seamlessly integrates multimodal understanding and generation within a single model. Mammoth2 effectively couples autoregressive semantic planning with a **Mixture-of-Experts (MoE) diffusion-based generation** backbone, enabling high-quality text-to-image generation, **text-to-video generation**, instruction-based editing, and comprehensive multimodal understanding.
+MammothModa2 is a unified autoregressive-diffusion (AR-Diffusion) framework that seamlessly integrates multimodal understanding and generation within a single model. The latest version, **Mammoth2.5**, is powered by Qwen3-VL and a **fine-grained Mixture-of-Experts (MoE) Diffusion Transformer (DiT)** with 128 routed experts, bringing multimodal understanding, generation, and editing together in a single architecture. One unified model supports **text-to-image, text-to-video, image editing, and video editing** with state-of-the-art performance and compute-efficient inference.
 
 <p align="center">
   <img src="./doc/highlight_moe.png" alt="MoE Architecture" width="750" />
@@ -27,20 +27,21 @@ MammothModa2 (Mammoth2) is a unified autoregressive-diffusion (AR-Diffusion) fra
 </p>
 
 **Key Features:**
-- **MoE DiT for Video Generation at Scale** MammothModa2 integrates a **Mixture-of-Experts (MoE)** architecture into the **Video Generation** pipeline to address the compute bottlenecks that emerge when scaling video models. MammothModa includes two MoE variants: 20B-A3B (E48A6) and 6B-A1.2B (E32A4). Despite having ~40% more total parameters than WanVideo 14B, the 20B model activates only ~20% of parameters at inference, achieving up to **15.1×** faster generation.
-- **Unified Multimodal Design** A single AR-diffusion framework built on Qwen3VL for multimodal understanding and an MoE DiT backbone for generation, supporting text-to-image, image editing, and text-to-video generation with shared representations and training recipes.
-- **🚀 Superior Efficiency**: Mammoth25 (20B-A3B) delivers 11–15× lower video latency than state-of-the-art video generators (e.g., LongCat-Video), while achieving strong quality on VBench2.0 with a 60.97% total score, outperforming Wan2.1-14B and HunyuanVideo1.0-13B and approaching LongCat-Video-14B.
+- **Effective Fine-Grained MoE Architecture:** Mammoth2.5 employs a **fine-grained Mixture-of-Experts (MoE)** design with **128 routed experts** and Top-8 routing to scale the DiT backbone to **25B total parameters** while activating only ~3B per forward pass (~12%). This yields over **12x faster inference** than Wan2.2 A14B on a single device.
+- **Unified Visual Generation & Editing:** A single **AR-Diffusion** framework built on Qwen3-VL for multimodal understanding and an MoE DiT backbone for generation. One unified model supports **text-to-image, text-to-video, image editing, and video editing**, eliminating the need for separate task-specific models.
+- **SOTA Performance with Compute-Efficient Inference:** **Video generation** reaches top-tier open-source quality on VBench 2.0 (**61.64**, on par with HunyuanVideo 1.5 and LongCat-Video) with only **110s** latency — 12x faster than Wan2.2 A14B and 18x faster than LongCat-Video. **Video editing** achieves SOTA across all three public benchmarks: **#1 on OpenVE-Bench** (3.86, surpassing the proprietary Kling O1), **#1 on FiVE-Bench** (87.41 vs. 73.53 for the next best), and best overall on Reco-Bench — all with up to **~10x faster inference** than comparable editing baselines.
 
 ## 🎉 News
+- 2026-02-15: 🔥Released **MammothModa2.5** inference code for **Video Generation** and **Video Editing**! Model weights coming soon. Check out our [Project Page](https://mammothmoda2.github.io/).
 - 2025-12-31: 🔥Released **MammothModa2** with **MoE DiT** architecture, now supporting **Video Generation**! Check out our new [Project Page](https://mammothmoda2.github.io/). Code is available at [MammothModa25](https://github.com/bytedance/mammothmoda/tree/main/mammothmoda25).
 - 2025-12-10: 🔥MammothModa2-Dev build upon Qwen3VL-8B supports Image Editing are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev). 
 - 2025-10-01: 🔥MammothModa2-Preview models are now available at [HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview). **Note: To use the Preview version, please switch to the `qwen25vl` branch.**
 
 ## Showcases
 
-### Text-to-Video Generation & Video Editing (Coming Soon)
+### Text-to-Video Generation
 
-MammothModa2 supports high-quality text-to-video generation. 
+Mammoth2.5 supports high-quality text-to-video generation with over 12x faster inference than dense models of comparable capacity.
 
 <table>
   <tr>
@@ -117,6 +118,64 @@ MammothModa2 supports high-quality text-to-video generation.
   </tr>
 </table>
 
+### Video Editing
+
+Mammoth2.5 achieves state-of-the-art video editing performance, ranking #1 on OpenVE-Bench, FiVE-Bench, and Reco-Bench.
+
+<table>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/9c5a7328-fed5-4d7a-884c-6dbe4b0d433d" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Add Backpack</b>
+      </div>
+    </td>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/d69621da-082c-4103-b4de-cb60a3b77a2c" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Transform Hand into Robotic Hand</b>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/65d6baab-a798-4feb-b4dd-8acc40a6f354" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Ghibli Style</b>
+      </div>
+    </td>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/f90817db-8967-4731-b63f-ffa746d24212" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Remove Right Person</b>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <div align="center">
+        <video src="https://github.com/user-attachments/assets/aa6e6d4b-11bc-4cb6-8ae7-113995ac315c" controls="controls" width="100%">
+        </video>
+        <br>
+        <b>Edit Gender</b>
+      </div>
+    </td>
+    <td width="50%">
+      <div align="center">
+        <a href="https://mammothmoda2.github.io/">View More on Project Page</a>
+      </div>
+    </td>
+  </tr>
+</table>
+
 ### Text-to-Image & Image Editing
 
 <div align="center">
@@ -125,12 +184,11 @@ MammothModa2 supports high-quality text-to-video generation.
 
 
 ## 🪄 Models
-| Model | Download Link | Arch |Description|
-|-------|---------------|-------------|-------------|
-| MammothModa2_5-6B-A1.2B| [Coming Soon] |Qwen3VL + 6B-A1.2B MoE DiT | 🔥 Supporting Video Generation. |
-| MammothModa2_5-20B-A3B| [Coming Soon] |Qwen3VL + 20B-A3B MoE DiT | 🔥 Supporting Video Generation. |
-| MammothModa2-Dev | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev) | Qwen3VL-8B + 3B gen experts + 2B dense DiT | Image Generation & Editing|
-| MammothModa2-Preview | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview) | Qwen25VL-7B + 3B gen experts + 2B dense DiT| Image Generation. Note: Please switch to the `qwen25vl` branch. |
+| Model | Download Link | Arch | Description |
+|-------|---------------|------|-------------|
+| Mammoth2.5-25B-A3B | [Coming Soon] | Qwen3-VL + 25B-A3B MoE DiT (E128A8) | 🔥 Video Generation, Video Editing, Image Editing. |
+| MammothModa2-Dev | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Dev) | Qwen3VL-8B + 3B gen experts + 2B dense DiT | Image Generation & Editing |
+| MammothModa2-Preview | [🤗 HuggingFace](https://huggingface.co/bytedance-research/MammothModa2-Preview) | Qwen25VL-7B + 3B gen experts + 2B dense DiT | Image Generation. Note: Please switch to the `qwen25vl` branch. |
 
 ## ⚙️ Installation
 
@@ -298,17 +356,51 @@ print(output_texts)
 
 **Note**: Model sizes in "A + B" format indicate separate understanding (A) and generation (B) parameters. Models without "+" share parameters for both tasks. MammothModa2 uses a 8B + (3B + 2B) architecture, where the 8B parameters are for understanding, and the generation part consists of 3B parameters in the AR (MLLM backbone) and 2B parameters in the DiT component.
 
-### Text-to-Video
+### Text-to-Video (VBench 2.0)
 
-Coming soon.
+| Model | Total |
+|-------|-------|
+| **Proprietary** |
+| Sora-480p | 58.38 |
+| Kling1.6 | 59.00 |
+| Vidu Q1 | 62.70 |
+| Seedance 1.0 Pro | 59.81 |
+| Veo3 | **66.72** |
+| **Open Source** |
+| HunyuanVideo | 55.30 |
+| Wan2.1 | 60.20 |
+| LongCat-Video | 62.11 |
+| **Mammoth2.5** | **61.64** |
 
 ### Image Editing
 
-Coming soon.
+| Model | ImgEdit Avg. | GEdit-EN Overall |
+|-------|-------------|-----------------|
+| **Proprietary** |
+| Gemini 2.5 | 4.30 | 7.17 |
+| GPT-4o | 4.30 | 7.48 |
+| Seedream 4 | 4.46 | 7.72 |
+| **Open Source** |
+| Flux-Kontext-Dev | 4.09 | 6.53 |
+| Step1x-Edit | 4.01 | 6.87 |
+| Mammoth2 | 4.06 | 6.82 |
+| VInO | 4.18 | 6.88 |
+| **Mammoth2.5** | **4.22** | **7.05** |
 
 ### Video Editing
 
-Coming soon.
+Mammoth2.5 achieves state-of-the-art video editing performance, ranking **#1 on OpenVE-Bench**, **#1 on FiVE-Bench**, and **best overall on Reco-Bench**.
+
+| Model | OpenVE-Bench | FiVE-Acc |
+|-------|-------------|----------|
+| **Proprietary** |
+| Kling O1 | 3.69 | - |
+| **Open Source** |
+| VACE-14B | 1.65 | - |
+| Wan-Edit | - | 46.97 |
+| Omni-Video2 | - | 73.53 |
+| VInO | 3.21 | - |
+| **Mammoth2.5** | **3.86** | **87.41** |
 
 
 ## Acknowledgement
