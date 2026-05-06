@@ -117,7 +117,7 @@ Mamoda is a family of unified AR-Diffusion models that seamlessly integrate mult
 
 | Version | Architecture | Capabilities | Details |
 |---------|-------------|--------------|---------|
-| **Mamoda2.5** | Qwen3-VL + 25B-A3B MoE DiT (E128A8) | Video Gen, Video Edit, Image Edit | [→ mmoda25/](./mmoda25/) |
+| **Mamoda2.5** | Qwen3-VL + 25B-A3B MoE DiT (E128A8) | Video Gen, Video Edit, Image Edit | [→ mamoda25/](./mamoda25/) |
 | **Mamoda2** | Qwen3VL-8B + 3B experts + 2B DiT | Image Gen, Image Edit, Understanding | [→ mamoda2/](./mamoda2/) |
 
 ## Citation
