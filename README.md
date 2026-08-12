@@ -78,18 +78,20 @@ Mamoda is a family of unified AR-Diffusion models that seamlessly integrate mult
 
 ### Video Editing
 
+More examples on the [Project Page](https://mamoda25.github.io/).
+
 <table>
   <tr>
     <td width="50%">
       <div align="center">
-        <video src="https://github.com/user-attachments/assets/9c5a7328-fed5-4d7a-884c-6dbe4b0d433d" controls="controls" width="100%">
+        <video src="https://github.com/user-attachments/assets/133ebe67-880e-4532-9442-24be7d95a903" controls="controls" width="100%">
         </video>
         <br><b>Add Backpack</b>
       </div>
     </td>
     <td width="50%">
       <div align="center">
-        <video src="https://github.com/user-attachments/assets/d69621da-082c-4103-b4de-cb60a3b77a2c" controls="controls" width="100%">
+        <video src="https://github.com/user-attachments/assets/14d4dd84-d31b-4d43-b92e-93a867ddf663" controls="controls" width="100%">
         </video>
         <br><b>Transform Hand into Robotic Hand</b>
       </div>
@@ -98,14 +100,14 @@ Mamoda is a family of unified AR-Diffusion models that seamlessly integrate mult
   <tr>
     <td width="50%">
       <div align="center">
-        <video src="https://github.com/user-attachments/assets/65d6baab-a798-4feb-b4dd-8acc40a6f354" controls="controls" width="100%">
+        <video src="https://github.com/user-attachments/assets/4759c701-1208-49d4-85d6-37956a5271fa" controls="controls" width="100%">
         </video>
         <br><b>Ghibli Style</b>
       </div>
     </td>
     <td width="50%">
       <div align="center">
-        <video src="https://github.com/user-attachments/assets/f90817db-8967-4731-b63f-ffa746d24212" controls="controls" width="100%">
+        <video src="https://github.com/user-attachments/assets/b52c6269-261f-4e7d-80a5-f57e28fd071a" controls="controls" width="100%">
         </video>
         <br><b>Remove Right Person</b>
       </div>
@@ -144,6 +146,8 @@ Mamoda is a family of unified AR-Diffusion models that seamlessly integrate mult
 **Moderation LLM Team @ ByteDance** — We're hiring! Passionate about multimodal AI, computer vision, and MLLM development?
 
 We develop leading MLLMs for content moderation, building infrastructure including model benchmarking, data pipelines, efficient architectures, and training methodologies.
+
+**Learn more:** [Mamoda Research One-Pager](https://tosv.byted.org/obj/besevamodelv3/visualize/mamoda-research-onepager.html)
 
 <details>
 <summary><b>Recent Publications (2024–2026)</b></summary>
