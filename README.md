@@ -147,7 +147,7 @@ More examples on the [Project Page](https://mamoda25.github.io/).
 
 We develop leading MLLMs for content moderation, building infrastructure including model benchmarking, data pipelines, efficient architectures, and training methodologies.
 
-**Learn more:** [Mamoda Research One-Pager](https://tosv.byted.org/obj/besevamodelv3/visualize/mamoda-research-onepager.html)
+**Learn more:** [Mamoda Team Research Page](https://mamodaresearch.github.io/)
 
 <details>
 <summary><b>Recent Publications (2024–2026)</b></summary>
