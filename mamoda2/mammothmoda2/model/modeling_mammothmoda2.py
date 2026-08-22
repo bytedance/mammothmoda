@@ -290,7 +290,7 @@ class Mammothmoda2Model(Mammothmoda2PreTrainedModel):
     ) -> None:
         generation_config.update(**kwargs)
         scope_start = generation_config.visual_token_start_id
-        scope_end = scope_start + generation_config.visual_token_end_id
+        scope_end = generation_config.visual_token_end_id
         B, L = input_ids.shape
         cfg_enable = cfg_scale > 1.0
 
