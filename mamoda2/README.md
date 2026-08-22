@@ -115,7 +115,7 @@ inputs = processor(
 with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
     generated_ids, attention_mask = model.generate(**inputs)
     decode_diffusion_image(
-        input_ids=inputs.input_ids,
+        prompt_ids=inputs.input_ids,
         generated_ids=generated_ids,
         attention_mask=attention_mask,
         negative_ids=inputs.get("negative_ids", None),
