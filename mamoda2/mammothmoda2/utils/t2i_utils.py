@@ -221,10 +221,11 @@ def processing(
             ref_image_hidden_states=ref_latents,
             freqs_cis=freqs_cis,
         )
-        text_guidance_scale = text_guidance_scale if cfg_range[0] <= i / len(timesteps) <= cfg_range[1] else 1.0
-        image_guidance_scale = image_guidance_scale if cfg_range[0] <= i / len(timesteps) <= cfg_range[1] else 1.0
+        in_cfg_range = cfg_range[0] <= i / len(timesteps) <= cfg_range[1]
+        step_text_guidance_scale = text_guidance_scale if in_cfg_range else 1.0
+        step_image_guidance_scale = image_guidance_scale if in_cfg_range else 1.0
 
-        if text_guidance_scale > 1.0 and image_guidance_scale > 1.0:
+        if step_text_guidance_scale > 1.0 and step_image_guidance_scale > 1.0:
             model_pred_ref = model.gen_transformer(
                 hidden_states=latents,
                 timestep=timestep,
@@ -245,11 +246,11 @@ def processing(
 
             model_pred = (
                 model_pred_uncond
-                + image_guidance_scale * (model_pred_ref - model_pred_uncond)
-                + text_guidance_scale * (model_pred - model_pred_ref)
+                + step_image_guidance_scale * (model_pred_ref - model_pred_uncond)
+                + step_text_guidance_scale * (model_pred - model_pred_ref)
             )
 
-        elif text_guidance_scale > 1.0:
+        elif step_text_guidance_scale > 1.0:
             model_pred_uncond = model.gen_transformer(
                 hidden_states=latents,
                 timestep=timestep,
@@ -259,7 +260,7 @@ def processing(
                 freqs_cis=freqs_cis,
             )
 
-            model_pred = model_pred_uncond + text_guidance_scale * (model_pred - model_pred_uncond)
+            model_pred = model_pred_uncond + step_text_guidance_scale * (model_pred - model_pred_uncond)
 
         latents = scheduler.step(model_pred, t, latents, return_dict=False)[0]
         latents = latents.to(dtype=dtype)
